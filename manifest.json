@@ -1,13 +1,16 @@
 {
     "manifest_version": 3,
-    "name": "AeroSpace Tab Dispatcher",
-    "version": "1.0.1",
-    "description": "Automatically organize tabs into tagged windows for AeroSpace.",
+    "name": "Tab Defenestrator",
+    "version": "1.0.2",
+    "description": "Automatically organize tabs into themed tagged windows for AeroSpace.",
     "permissions": [
         "tabs",
         "storage",
         "theme"
     ],
+    "icons": {
+      "32": "icons/icon.svg"
+    },
     "host_permissions": [
         "<all_urls>"
     ],
@@ -21,7 +24,7 @@
     },
     "browser_specific_settings": {
         "gecko": {
-            "id": "aerospace-dispatcher@hannesbuseyne.com",
+            "id": "defenestrator@hannesbuseyne.com",
             "strict_min_version": "142.0",
             "data_collection_permissions": {
                 "required": ["browsingActivity"],

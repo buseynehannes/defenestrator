@@ -90,9 +90,17 @@ export class TabDispatcher {
         targetTag: WindowTag
     ): Promise<void> {
         this.logger.log(`[DISPATCH] >> Moving tab to existing window ${targetWindow.id} [${targetTag}]`);
+
+        // Remember the source window to check if it needs cleanup
+        const tab = await this.tabRepo.getTab(tabId);
+        const sourceWindowId = tab.windowId;
+
         await this.tabRepo.moveTab(tabId, targetWindow.id);
         await this.windowRepo.focusWindow(targetWindow.id);
         await this.tabRepo.activateTab(tabId);
+
+        // Cleanup: If the source window is now empty (just blank tabs), close it
+        await this.closeWindowIfEmpty(sourceWindowId);
     }
 
     private async handleNewWindow(
@@ -121,5 +129,26 @@ export class TabDispatcher {
         const tabs = await this.tabRepo.getTabsInWindow(windowId);
         return tabs.length <= 1 ||
                (tabs.length === 2 && tabs.some(t => t.url === "about:blank"));
+    }
+
+    private async closeWindowIfEmpty(windowId: WindowId): Promise<void> {
+        try {
+            const tabs = await this.tabRepo.getTabsInWindow(windowId);
+
+            // If the window only has blank/new tabs, close it
+            const allTabsBlank = tabs.every(t =>
+                t.url === "about:blank" ||
+                t.url === "about:newtab" ||
+                t.url === ""
+            );
+
+            if (tabs.length > 0 && allTabsBlank) {
+                this.logger.log(`[CLEANUP] Closing empty window ${windowId}`);
+                await this.windowRepo.closeWindow(windowId);
+            }
+        } catch (e) {
+            // Window might already be closed or not exist, which is fine
+            this.logger.log(`[CLEANUP] Could not check/close window ${windowId}:`, e);
+        }
     }
 }

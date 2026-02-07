@@ -32,6 +32,10 @@ class MockWindowRepository implements WindowRepository {
 
   focusWindow = vi.fn(async (_windowId: WindowId): Promise<void> => {});
 
+  closeWindow = vi.fn(async (windowId: WindowId): Promise<void> => {
+    this.windows.delete(windowId);
+  });
+
   removeWindowTag = vi.fn(async (windowId: WindowId): Promise<void> => {
     this.windows.delete(windowId);
   });

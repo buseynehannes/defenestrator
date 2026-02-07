@@ -34,3 +34,5 @@ polyfill/
 !src/background.js.old
 
 .idea
+.amo-upload-uuid
+web-ext-artifacts

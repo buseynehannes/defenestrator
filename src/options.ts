@@ -200,16 +200,19 @@ function handleThemeChange(event: Event) {
     }
 
     const theme = currentRule.theme || {};
-    let updatedTheme = { ...theme };
 
+    // Create new theme object with updated property (readonly fix)
+    let updatedTheme;
     if (target.classList.contains('theme-accent')) {
-        updatedTheme.accentColor = target.value;
+        updatedTheme = { ...theme, accentColor: target.value };
     } else if (target.classList.contains('theme-text')) {
-        updatedTheme.textColor = target.value;
+        updatedTheme = { ...theme, textColor: target.value };
     } else if (target.classList.contains('theme-frame')) {
-        updatedTheme.frameColor = target.value;
+        updatedTheme = { ...theme, frameColor: target.value };
     } else if (target.classList.contains('theme-tab-text')) {
-        updatedTheme.tabBackgroundText = target.value;
+        updatedTheme = { ...theme, tabBackgroundText: target.value };
+    } else {
+        updatedTheme = theme;
     }
 
     rules[index] = { ...currentRule, theme: updatedTheme };

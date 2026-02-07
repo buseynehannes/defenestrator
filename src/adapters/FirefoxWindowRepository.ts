@@ -6,6 +6,8 @@ import type { Theme } from "../domain/TaggingRule.js";
 
 declare const browser: typeof import("webextension-polyfill");
 
+const WINDOW_TAGS_STORAGE_KEY = 'defenestrator_window_tags';
+
 export class FirefoxWindowRepository implements WindowRepository {
     constructor(private readonly logger: Logger) {}
 
@@ -18,6 +20,12 @@ export class FirefoxWindowRepository implements WindowRepository {
         try {
             // Set the visual window title prefix for AeroSpace
             await browser.windows.update(windowId, { titlePreface: tag });
+
+            // Persist the tag in storage (since titlePreface is not reliably readable)
+            const storage = await browser.storage.local.get(WINDOW_TAGS_STORAGE_KEY);
+            const windowTags = (storage[WINDOW_TAGS_STORAGE_KEY] as Record<number, string>) || {};
+            windowTags[windowId] = tag;
+            await browser.storage.local.set({ [WINDOW_TAGS_STORAGE_KEY]: windowTags });
 
             // Apply theme if provided
             if (theme) {
@@ -76,9 +84,10 @@ export class FirefoxWindowRepository implements WindowRepository {
 
     async getWindowTag(windowId: WindowId): Promise<WindowTag | null> {
         try {
-            // Get the current titlePreface from the window
-            const window = await browser.windows.get(windowId);
-            return ((window as any).titlePreface as WindowTag | undefined) ?? null;
+            // Read from storage (titlePreface is not reliably readable via Firefox API)
+            const storage = await browser.storage.local.get(WINDOW_TAGS_STORAGE_KEY);
+            const windowTags = (storage[WINDOW_TAGS_STORAGE_KEY] as Record<number, string>) || {};
+            return (windowTags[windowId] as WindowTag) || null;
         } catch (e) {
             this.logger.error(`[TAG] Error getting tag for ${windowId}:`, e);
             return null;
@@ -94,8 +103,20 @@ export class FirefoxWindowRepository implements WindowRepository {
         await browser.windows.update(windowId, { focused: true });
     }
 
-    async removeWindowTag(_windowId: WindowId): Promise<void> {
-        // No-op: titlePreface is automatically cleared when window closes
-        // This method exists for interface compatibility
+    async closeWindow(windowId: WindowId): Promise<void> {
+        await browser.windows.remove(windowId);
+    }
+
+    async removeWindowTag(windowId: WindowId): Promise<void> {
+        try {
+            // Remove from storage
+            const storage = await browser.storage.local.get(WINDOW_TAGS_STORAGE_KEY);
+            const windowTags = (storage[WINDOW_TAGS_STORAGE_KEY] as Record<number, string>) || {};
+            delete windowTags[windowId];
+            await browser.storage.local.set({ [WINDOW_TAGS_STORAGE_KEY]: windowTags });
+            this.logger.log(`[TAG] Removed tag for window ${windowId}`);
+        } catch (e) {
+            this.logger.error(`[TAG] Error removing tag for ${windowId}:`, e);
+        }
     }
 }

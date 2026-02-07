@@ -37,6 +37,11 @@ export interface WindowRepository {
     focusWindow(windowId: WindowId): Promise<void>;
 
     /**
+     * Close a window
+     */
+    closeWindow(windowId: WindowId): Promise<void>;
+
+    /**
      * Remove tag data for a window (cleanup)
      */
     removeWindowTag(windowId: WindowId): Promise<void>;
