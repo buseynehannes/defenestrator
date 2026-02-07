@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Test coverage
+coverage/
+
+# Keep src JS files if they exist
+!src/**/*.js
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Extension artifacts
+polyfill/
+
+# Keep the old background.js as reference for now (optional)
+!src/background.js.old
+
+.idea
