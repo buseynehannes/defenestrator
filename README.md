@@ -1,4 +1,4 @@
-:# Defenestrator - Firefox Tab Organizer
+# Defenestrator - Firefox Tab Organizer
 
 A Firefox extension that automatically organizes tabs into tagged windows based on URL patterns, designed to work with AeroSpace window manager.
 
