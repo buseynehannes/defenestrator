@@ -27,6 +27,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "fp-ts": "^2.13.1",
     "webextension-polyfill": "^0.12.0"
   }
 }

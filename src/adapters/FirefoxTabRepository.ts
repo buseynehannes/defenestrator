@@ -1,6 +1,6 @@
-import type { TabRepository } from "../ports/TabRepository.js";
+import type { TabRepository } from "../application/ports/TabRepository.js";
 import type { Tab, TabId } from "../domain/Tab.js";
-import type { WindowId } from "../domain/WindowTag.js";
+import type { WindowId } from "../domain/WindowName";
 
 declare const browser: typeof import("webextension-polyfill");
 

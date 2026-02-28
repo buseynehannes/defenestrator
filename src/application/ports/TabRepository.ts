@@ -1,5 +1,5 @@
-import type { Tab, TabId } from "../domain/Tab.js";
-import type { WindowId } from "../domain/WindowTag.js";
+import type { Tab, TabId } from "../../domain/Tab";
+import type { WindowId } from "../../domain/WindowName";
 
 export interface TabRepository {
     /**

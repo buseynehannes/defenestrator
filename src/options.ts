@@ -1,22 +1,24 @@
 import { BrowserStorageConfigurationStore } from "./adapters/BrowserStorageConfigurationStore.js";
-import { DEFAULT_CONFIGURATION } from "./domain/ConfigurationStore.js";
-import type { Configuration } from "./domain/ConfigurationStore.js";
+import { DEFAULT_CONFIGURATION_DATA } from "./domain/ConfigurationStore.js";
+import type { ConfigurationData } from "./domain/ConfigurationStore.js";
 
 declare const browser: typeof import("webextension-polyfill");
 
 const configStore = new BrowserStorageConfigurationStore();
-let currentConfig: Configuration;
+let currentConfig: ConfigurationData;
 
 // DOM Elements (will be initialized on DOMContentLoaded)
-let rulesContainer: HTMLElement;
-let patternsContainer: HTMLElement;
+let windowsContainer: HTMLElement;
+let globalRulesContainer: HTMLElement;
+let defaultWindowSelect: HTMLSelectElement;
 let statusMessage: HTMLElement;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize DOM elements after DOM is ready
-    rulesContainer = document.getElementById('rulesContainer')!;
-    patternsContainer = document.getElementById('patternsContainer')!;
+    windowsContainer = document.getElementById('windowsContainer')!;
+    globalRulesContainer = document.getElementById('globalRulesContainer')!;
+    defaultWindowSelect = document.getElementById('defaultWindowSelect') as HTMLSelectElement;
     statusMessage = document.getElementById('statusMessage')!;
 
     await loadConfiguration();
@@ -25,41 +27,51 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function loadConfiguration() {
     currentConfig = await configStore.getConfiguration();
-    renderRules();
-    renderPatterns();
+    renderWindows();
+    renderGlobalRules();
+    renderDefaultWindowSelect();
 }
 
-function renderRules() {
-    rulesContainer.innerHTML = '';
+function renderWindows() {
+    windowsContainer.innerHTML = '';
 
-    if (currentConfig.rules.length === 0) {
-        rulesContainer.innerHTML = '<div class="empty-state">No rules defined. Click "Add Rule" to create one.</div>';
+    if (currentConfig.windows.length === 0) {
+        windowsContainer.innerHTML = '<div class="empty-state">No windows defined. Click "Add ClassifiedWindow" to create one.</div>';
         return;
     }
 
-    currentConfig.rules.forEach((rule, index) => {
-        const ruleDiv = document.createElement('div');
-        ruleDiv.className = 'rule-item';
+    currentConfig.windows.forEach((windowDef, index) => {
+        const isDefault = index === currentConfig.windows.length - 1;
+        const windowDiv = document.createElement('div');
+        windowDiv.className = `window-item ${isDefault ? 'window-default' : ''}`;
 
-        const theme = rule.theme || {};
+        const theme = windowDef.theme || {};
         const accentColor = theme.accentColor || '#3498db';
         const textColor = theme.textColor || '#ffffff';
         const frameColor = theme.frameColor || '';
         const tabBgText = theme.tabBackgroundText || '';
-        const isSticky = rule.sticky === true;
+        const isSticky = windowDef.sticky === true;
+        const matchPatterns = windowDef.match.join('\n');
 
-        ruleDiv.innerHTML = `
-            <div class="form-group">
-                <label>Tag Name (e.g., [DEV], [WORK], [PERSONAL])</label>
-                <input type="text" class="rule-tag" data-index="${index}" value="${escapeHtml(rule.tag)}">
+        windowDiv.innerHTML = `
+            <div class="window-header">
+                <div class="window-title">
+                    <input type="text" class="window-tag" data-index="${index}" value="${escapeHtml(windowDef.tag)}" placeholder="e.g., [DEV]">
+                    ${isDefault ? '<span class="badge-default">Default ClassifiedWindow</span>' : ''}
+                </div>
+                <div class="window-controls">
+                    ${index > 0 ? `<button class="btn-small btn-up" data-index="${index}">↑ Move Up</button>` : ''}
+                    ${index < currentConfig.windows.length - 1 ? `<button class="btn-small btn-down" data-index="${index}">↓ Move Down</button>` : ''}
+                </div>
             </div>
             <div class="form-group">
                 <label>Match Keywords (one per line)</label>
-                <textarea class="rule-match" data-index="${index}" rows="3">${escapeHtml(rule.match.join('\n'))}</textarea>
+                <textarea class="window-match" data-index="${index}" rows="3" ${isDefault ? 'disabled' : ''} placeholder="github.com&#10;gitlab.com">${escapeHtml(matchPatterns)}</textarea>
+                ${isDefault ? '<small>Default window has no matching rules - all unmatched tabs go here</small>' : ''}
             </div>
             <div class="form-group">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" class="rule-sticky" data-index="${index}" ${isSticky ? 'checked' : ''}>
+                    <input type="checkbox" class="window-sticky" data-index="${index}" ${isSticky ? 'checked' : ''}>
                     <span>📌 Sticky Window (prevent tabs from being auto-moved)</span>
                 </label>
             </div>
@@ -97,35 +109,41 @@ function renderRules() {
                 </div>
             </div>
             <div class="button-group">
-                <button class="btn-danger btn-remove-rule" data-index="${index}">Remove Rule</button>
+                ${!isDefault ? `<button class="btn-danger btn-remove-window" data-index="${index}">Remove Window</button>` : ''}
             </div>
         `;
-        rulesContainer.appendChild(ruleDiv);
+        windowsContainer.appendChild(windowDiv);
     });
 
-    // Add event listeners
-    document.querySelectorAll('.rule-tag').forEach(input => {
-        input.addEventListener('input', handleRuleChange);
+    // Add event listeners for windows
+    document.querySelectorAll('.window-tag').forEach(input => {
+        input.addEventListener('input', handleWindowTagChange);
     });
-    document.querySelectorAll('.rule-match').forEach(textarea => {
-        textarea.addEventListener('input', handleRuleChange);
+    document.querySelectorAll('.window-match').forEach(textarea => {
+        textarea.addEventListener('input', handleWindowMatchChange);
     });
-    document.querySelectorAll('.rule-sticky').forEach(checkbox => {
-        checkbox.addEventListener('change', handleStickyChange);
+    document.querySelectorAll('.window-sticky').forEach(checkbox => {
+        checkbox.addEventListener('change', handleWindowStickyChange);
     });
     document.querySelectorAll('.theme-accent, .theme-text, .theme-frame, .theme-tab-text').forEach(input => {
         input.addEventListener('input', handleThemeChange);
     });
-    document.querySelectorAll('.btn-remove-rule').forEach(btn => {
-        btn.addEventListener('click', handleRemoveRule);
+    document.querySelectorAll('.btn-remove-window').forEach(btn => {
+        btn.addEventListener('click', handleRemoveWindow);
+    });
+    document.querySelectorAll('.btn-up').forEach(btn => {
+        btn.addEventListener('click', handleMoveUp);
+    });
+    document.querySelectorAll('.btn-down').forEach(btn => {
+        btn.addEventListener('click', handleMoveDown);
     });
 }
 
-function renderPatterns() {
-    patternsContainer.innerHTML = '';
+function renderGlobalRules() {
+    globalRulesContainer.innerHTML = '';
 
     if (currentConfig.ignoredUrlPatterns.length === 0) {
-        patternsContainer.innerHTML = '<div class="empty-state">No ignored patterns defined.</div>';
+        globalRulesContainer.innerHTML = '<div class="empty-state">No ignored patterns defined.</div>';
         return;
     }
 
@@ -141,10 +159,10 @@ function renderPatterns() {
                 <button class="btn-danger btn-remove-pattern" data-index="${index}">Remove Pattern</button>
             </div>
         `;
-        patternsContainer.appendChild(patternDiv);
+        globalRulesContainer.appendChild(patternDiv);
     });
 
-    // Add event listeners
+    // Add event listeners for patterns
     document.querySelectorAll('.pattern-value').forEach(input => {
         input.addEventListener('input', handlePatternChange);
     });
@@ -153,55 +171,76 @@ function renderPatterns() {
     });
 }
 
-function handleRuleChange(event: Event) {
-    const target = event.target as HTMLInputElement | HTMLTextAreaElement;
-    const index = parseInt(target.dataset.index!);
-    const rules = [...currentConfig.rules];
-    const currentRule = rules[index];
-
-    if (!currentRule) {
-        return;
-    }
-
-    if (target.classList.contains('rule-tag')) {
-        rules[index] = { ...currentRule, tag: target.value };
-    } else if (target.classList.contains('rule-match')) {
-        const match = target.value.split('\n')
-            .map(s => s.trim())
-            .filter(s => s.length > 0);
-        rules[index] = { ...currentRule, match };
-    }
-
-    currentConfig = { ...currentConfig, rules };
+function renderDefaultWindowSelect() {
+    defaultWindowSelect.innerHTML = '';
+    currentConfig.windows.forEach((windowDef, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = windowDef.tag;
+        if (index === currentConfig.windows.length - 1) {
+            option.selected = true;
+            option.textContent += ' (current default)';
+        }
+        defaultWindowSelect.appendChild(option);
+    });
 }
 
-function handleStickyChange(event: Event) {
+// Event handlers for windows
+function handleWindowTagChange(event: Event) {
     const target = event.target as HTMLInputElement;
     const index = parseInt(target.dataset.index!);
-    const rules = [...currentConfig.rules];
-    const currentRule = rules[index];
+    const windows = [...currentConfig.windows];
+    const currentWindow = windows[index];
 
-    if (!currentRule) {
-        return;
-    }
+    if (!currentWindow) return;
 
-    rules[index] = { ...currentRule, sticky: target.checked };
-    currentConfig = { ...currentConfig, rules };
+    windows[index] = { ...currentWindow, tag: target.value };
+    currentConfig = { ...currentConfig, windows };
+}
+
+function handleWindowMatchChange(event: Event) {
+    const target = event.target as HTMLTextAreaElement;
+    const index = parseInt(target.dataset.index!);
+    const isDefault = index === currentConfig.windows.length - 1;
+
+    if (isDefault) return; // Can't change match for default window
+
+    const windows = [...currentConfig.windows];
+    const currentWindow = windows[index];
+
+    if (!currentWindow) return;
+
+    const match = target.value.split('\n')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+
+    windows[index] = { ...currentWindow, match };
+    currentConfig = { ...currentConfig, windows };
+}
+
+function handleWindowStickyChange(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const index = parseInt(target.dataset.index!);
+    const windows = [...currentConfig.windows];
+    const currentWindow = windows[index];
+
+    if (!currentWindow) return;
+
+    windows[index] = { ...currentWindow, sticky: target.checked };
+    currentConfig = { ...currentConfig, windows };
 }
 
 function handleThemeChange(event: Event) {
     const target = event.target as HTMLInputElement;
     const index = parseInt(target.dataset.index!);
-    const rules = [...currentConfig.rules];
-    const currentRule = rules[index];
+    const windows = [...currentConfig.windows];
+    const currentWindow = windows[index];
 
-    if (!currentRule) {
-        return;
-    }
+    if (!currentWindow) return;
 
-    const theme = currentRule.theme || {};
+    const theme = currentWindow.theme || {};
 
-    // Create new theme object with updated property (readonly fix)
+    // Create new theme object with updated property
     let updatedTheme;
     if (target.classList.contains('theme-accent')) {
         updatedTheme = { ...theme, accentColor: target.value };
@@ -215,8 +254,8 @@ function handleThemeChange(event: Event) {
         updatedTheme = theme;
     }
 
-    rules[index] = { ...currentRule, theme: updatedTheme };
-    currentConfig = { ...currentConfig, rules };
+    windows[index] = { ...currentWindow, theme: updatedTheme };
+    currentConfig = { ...currentConfig, windows };
 
     // Update the color value display
     const colorValueSpan = target.nextElementSibling as HTMLSpanElement;
@@ -230,40 +269,86 @@ function handlePatternChange(event: Event) {
     const index = parseInt(target.dataset.index!);
     const patterns = [...currentConfig.ignoredUrlPatterns];
     patterns[index] = target.value;
-    currentConfig = { ...currentConfig, ignoredUrlPatterns: patterns };
+    currentConfig = {
+        ...currentConfig,
+        ignoredUrlPatterns: patterns
+    };
 }
 
-function handleRemoveRule(event: Event) {
+function handleRemoveWindow(event: Event) {
     const target = event.target as HTMLButtonElement;
     const index = parseInt(target.dataset.index!);
-    const rules = currentConfig.rules.filter((_, i) => i !== index);
-    currentConfig = { ...currentConfig, rules };
-    renderRules();
+    // Don't allow removing the default window
+    if (index === currentConfig.windows.length - 1) {
+        showStatus('Cannot remove the default window', 'error');
+        return;
+    }
+    const windows = currentConfig.windows.filter((_, i) => i !== index);
+    currentConfig = { ...currentConfig, windows };
+    renderWindows();
+    renderDefaultWindowSelect();
 }
 
 function handleRemovePattern(event: Event) {
     const target = event.target as HTMLButtonElement;
     const index = parseInt(target.dataset.index!);
     const patterns = currentConfig.ignoredUrlPatterns.filter((_, i) => i !== index);
-    currentConfig = { ...currentConfig, ignoredUrlPatterns: patterns };
-    renderPatterns();
+    currentConfig = {
+        ...currentConfig,
+        ignoredUrlPatterns: patterns
+    };
+    renderGlobalRules();
+}
+
+function handleMoveUp(event: Event) {
+    const target = event.target as HTMLButtonElement;
+    const index = parseInt(target.dataset.index!);
+    if (index === 0) return; // Can't move first window up
+
+    const windows = [...currentConfig.windows];
+    const temp = windows[index - 1]!;
+    windows[index - 1] = windows[index]!;
+    windows[index] = temp;
+    currentConfig = { ...currentConfig, windows };
+    renderWindows();
+    renderDefaultWindowSelect();
+}
+
+function handleMoveDown(event: Event) {
+    const target = event.target as HTMLButtonElement;
+    const index = parseInt(target.dataset.index!);
+    if (index >= currentConfig.windows.length - 1) return; // Can't move last window down
+
+    const windows = [...currentConfig.windows];
+    const temp = windows[index]!;
+    windows[index] = windows[index + 1]!;
+    windows[index + 1] = temp;
+    currentConfig = { ...currentConfig, windows };
+    renderWindows();
+    renderDefaultWindowSelect();
 }
 
 function setupEventListeners() {
-    document.getElementById('addRuleBtn')!.addEventListener('click', () => {
-        const rules = [...currentConfig.rules, {
+    document.getElementById('addWindowBtn')!.addEventListener('click', () => {
+        const windows = [...currentConfig.windows];
+        // Insert before the default window
+        windows.splice(windows.length - 1, 0, {
             tag: '[NEW]',
             match: ['example.com'],
             theme: { accentColor: '#3498db', textColor: '#ffffff' }
-        }];
-        currentConfig = { ...currentConfig, rules };
-        renderRules();
+        });
+        currentConfig = { ...currentConfig, windows };
+        renderWindows();
+        renderDefaultWindowSelect();
     });
 
     document.getElementById('addPatternBtn')!.addEventListener('click', () => {
         const patterns = [...currentConfig.ignoredUrlPatterns, 'new-pattern:'];
-        currentConfig = { ...currentConfig, ignoredUrlPatterns: patterns };
-        renderPatterns();
+        currentConfig = {
+            ...currentConfig,
+            ignoredUrlPatterns: patterns
+        };
+        renderGlobalRules();
     });
 
     document.getElementById('saveBtn')!.addEventListener('click', async () => {
@@ -280,9 +365,10 @@ function setupEventListeners() {
 
     document.getElementById('resetBtn')!.addEventListener('click', async () => {
         if (confirm('Are you sure you want to reset to default configuration? This cannot be undone.')) {
-            currentConfig = DEFAULT_CONFIGURATION;
-            renderRules();
-            renderPatterns();
+            currentConfig = DEFAULT_CONFIGURATION_DATA;
+            renderWindows();
+            renderGlobalRules();
+            renderDefaultWindowSelect();
             showStatus('Reset to default configuration. Click "Save" to apply.', 'success');
         }
     });
@@ -309,25 +395,48 @@ function setupEventListeners() {
 
             try {
                 const text = await file.text();
-                const imported = JSON.parse(text) as Configuration;
+                const imported = JSON.parse(text);
 
-                // Validate structure
-                if (!imported.rules || !Array.isArray(imported.rules)) {
-                    throw new Error('Invalid configuration format: missing rules array');
+                // Validate structure before using
+                if (!imported || typeof imported !== 'object') {
+                    showStatus('Error importing configuration: Invalid JSON format', 'error');
+                    return;
                 }
+
+                if (!imported.windows || !Array.isArray(imported.windows)) {
+                    showStatus('Error importing configuration: missing windows array', 'error');
+                    return;
+                }
+
                 if (!imported.ignoredUrlPatterns || !Array.isArray(imported.ignoredUrlPatterns)) {
-                    throw new Error('Invalid configuration format: missing ignoredUrlPatterns array');
+                    showStatus('Error importing configuration: missing ignoredUrlPatterns', 'error');
+                    return;
                 }
 
-                currentConfig = imported;
-                renderRules();
-                renderPatterns();
+                currentConfig = imported as ConfigurationData;
+                renderWindows();
+                renderGlobalRules();
+                renderDefaultWindowSelect();
                 showStatus('Configuration imported successfully! Click "Save" to apply.', 'success');
             } catch (error) {
                 showStatus('Error importing configuration: ' + (error as Error).message, 'error');
             }
         };
         input.click();
+    });
+
+    document.getElementById('defaultWindowSelect')!.addEventListener('change', (e) => {
+        const selectedIndex = parseInt((e.target as HTMLSelectElement).value);
+        if (selectedIndex >= 0 && selectedIndex < currentConfig.windows.length - 1) {
+            // Swap the selected window to be last (default)
+            const windows = [...currentConfig.windows];
+            const selected = windows[selectedIndex]!;
+            windows[selectedIndex] = windows[windows.length - 1]!;
+            windows[windows.length - 1] = selected;
+            currentConfig = { ...currentConfig, windows };
+            renderWindows();
+            renderDefaultWindowSelect();
+        }
     });
 }
 

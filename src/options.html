@@ -67,8 +67,97 @@
             border-color: #3498db;
         }
 
+        .window-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+            border: 1px solid #e0e0e0;
+            border-left: 4px solid #3498db;
+        }
+
+        .window-item.window-default {
+            border-left-color: #2ecc71;
+            background: #f0fff4;
+        }
+
+        .window-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .window-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .window-title input {
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .badge-default {
+            background: #2ecc71;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .window-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .btn-small {
+            padding: 6px 10px;
+            font-size: 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-small:hover {
+            background: #2980b9;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
         .form-group {
             margin-bottom: 12px;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 4px;
+            font-size: 12px;
+            color: #666;
+            font-style: italic;
         }
 
         label {
@@ -295,29 +384,38 @@
 </head>
 <body>
     <h1>🪟 Defenestrator Configuration</h1>
-    <p class="subtitle">Configure how tabs are organized into tagged windows</p>
+    <p class="subtitle">Configure prioritized windows and URL patterns to organize your tabs</p>
 
     <div id="statusMessage" class="status-message"></div>
 
     <div class="section">
-        <h2>Tagging Rules</h2>
+        <h2>Tagged Windows (Priority Order)</h2>
         <p class="help-text">
-            Define rules that match URLs to window tags. When a tab's URL contains any of the match keywords,
-            it will be moved to a window with that tag. The first matching rule wins.
+            Windows are checked in order. The first matching window's rules will be used.
+            The last window is the default—all unmatched tabs go there.
+            Use the up/down arrows to reorder windows and change priority.
         </p>
-        <div id="rulesContainer"></div>
+        <div id="windowsContainer"></div>
         <div class="button-group">
-            <button id="addRuleBtn" class="btn-primary">+ Add Rule</button>
+            <button id="addWindowBtn" class="btn-primary">+ Add ClassifiedWindow</button>
         </div>
     </div>
 
     <div class="section">
-        <h2>Ignored URL Patterns</h2>
+        <h2>Set Default ClassifiedWindow</h2>
         <p class="help-text">
-            URLs starting with these patterns will be ignored and not trigger any tab organization.
-            Common examples: <span class="inline-code">about:</span>, <span class="inline-code">moz-extension:</span>, <span class="inline-code">chrome:</span>
+            Choose which window should be the default. Tabs that don't match any rules will go here.
         </p>
-        <div id="patternsContainer"></div>
+        <select id="defaultWindowSelect" class="form-input"></select>
+    </div>
+
+    <div class="section">
+        <h2>Global Ignored URL Patterns</h2>
+        <p class="help-text">
+            URLs starting with these patterns will be ignored globally, regardless of window rules.
+            Common examples: <span class="inline-code">about:</span>, <span class="inline-code">moz-extension:</span>
+        </p>
+        <div id="globalRulesContainer"></div>
         <div class="button-group">
             <button id="addPatternBtn" class="btn-primary">+ Add Pattern</button>
         </div>

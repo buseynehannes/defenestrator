@@ -1,12 +1,23 @@
-export type TabId = number;
-export type Url = string;
+/**
+ * Tab domain model
+ * Represents a browser tab with its identity and URL
+ */
+
+export type TabId = number & { readonly __brand: "TabId" };
+
+export function createTabId(id: number): TabId {
+    return id as TabId;
+}
 
 export interface Tab {
     readonly id: TabId;
-    readonly url: Url;
-    readonly windowId: number;
+    readonly url: string;
 }
 
-export function isInternalUrl(url: Url, ignoredPatterns: readonly string[]): boolean {
-    return ignoredPatterns.some(pattern => url.startsWith(pattern));
+export function createTab(id: TabId, url: string): Tab {
+    return {
+        id,
+        url
+    };
 }
+

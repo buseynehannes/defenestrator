@@ -1,11 +1,13 @@
-import { TaggingRuleSet } from "./domain/TaggingRule.js";
 import { TabDispatcher } from "./domain/TabDispatcher.js";
+import { Window } from "./domain/Window";
 import { FirefoxWindowRepository } from "./adapters/FirefoxWindowRepository.js";
+import { FirefoxWindowDefinitionRepository } from "./adapters/FirefoxWindowDefinitionRepository.js";
 import { FirefoxTabRepository } from "./adapters/FirefoxTabRepository.js";
 import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
 import { BrowserStorageConfigurationStore } from "./adapters/BrowserStorageConfigurationStore.js";
+import { PrioritizedWindowSetFactory } from "./domain/PrioritizedWindowSet";
 import type { TabId } from "./domain/Tab.js";
-import type { WindowId } from "./domain/WindowTag.js";
+import type { WindowId } from "./domain/WindowName";
 
 declare const browser: typeof import("webextension-polyfill");
 
@@ -13,21 +15,30 @@ declare const browser: typeof import("webextension-polyfill");
 
 const logger = new ConsoleLogger();
 const windowRepo = new FirefoxWindowRepository(logger);
+const windowDefRepo = new FirefoxWindowDefinitionRepository(logger);
 const tabRepo = new FirefoxTabRepository();
 const configStore = new BrowserStorageConfigurationStore();
 
 // These will be initialized from configuration
-let ruleSet: TaggingRuleSet;
 let dispatcher: TabDispatcher;
+let prioritizedWindowSet: ReturnType<typeof PrioritizedWindowSetFactory.create>;
 
 // --- CONFIGURATION INITIALIZATION ---
 
 async function initializeConfiguration() {
     try {
         logger.log('[CONFIG] Loading configuration...');
-        const config = await configStore.getConfiguration();
-        ruleSet = new TaggingRuleSet(config.rules);
-        dispatcher = new TabDispatcher(ruleSet, windowRepo, tabRepo, logger);
+        const configData = await configStore.getConfiguration();
+
+        // Create the prioritized window set with the domain models
+        prioritizedWindowSet = PrioritizedWindowSetFactory.create(
+            configData.windows,
+            configData.defaultWindowTag,
+            configData.defaultWindowTheme,
+            configData.ignoredUrlPatterns
+        );
+
+        dispatcher = new TabDispatcher(prioritizedWindowSet, windowRepo, windowDefRepo, tabRepo, logger);
         logger.log('[CONFIG] Configuration loaded successfully');
     } catch (e) {
         logger.error('[CONFIG] Error loading configuration:', e);
@@ -47,38 +58,44 @@ async function restoreWindowTags() {
             const tabs = await tabRepo.getTabsInWindow(window.id);
             if (tabs.length > 0) {
                 // Probabilistic detection: count which tags appear most in this window
-                const tagCounts = new Map<string, { count: number; rule: any }>();
+                const tagCounts = new Map<string, { count: number; windowDef: any }>();
 
                 for (const tab of tabs) {
-                    const rule = ruleSet.getRuleForUrl(tab.url);
-                    if (rule && rule.tag) {
-                        const current = tagCounts.get(rule.tag) || { count: 0, rule };
-                        tagCounts.set(rule.tag, { count: current.count + 1, rule });
+                    const windowDetails = prioritizedWindowSet.getWindowDetailsForUrl(tab.url);
+
+                    if (windowDetails && windowDetails.tag) {
+                        const current = tagCounts.get(windowDetails.tag) || { count: 0, windowDef: windowDetails };
+                        tagCounts.set(windowDetails.tag, { count: current.count + 1, windowDef: windowDetails });
                     }
                 }
 
                 // Find the most common tag
                 let mostCommonTag: string | null = null;
-                let mostCommonRule: any = null;
+                let mostCommonWindowDef: any = null;
                 let maxCount = 0;
 
                 for (const [tag, data] of tagCounts.entries()) {
                     if (data.count > maxCount) {
                         maxCount = data.count;
                         mostCommonTag = tag;
-                        mostCommonRule = data.rule;
+                        mostCommonWindowDef = data.windowDef;
                     }
                 }
 
-                if (mostCommonTag && mostCommonRule) {
-                    await windowRepo.setWindowTag(window.id, mostCommonTag, mostCommonRule.theme);
-                    const stickyNote = mostCommonRule.sticky ? ' (sticky)' : '';
-                    logger.log(`[STARTUP] Tagged window ${window.id} as ${mostCommonTag}${stickyNote} based on ${maxCount}/${tabs.length} tabs`);
+                if (mostCommonTag && mostCommonWindowDef) {
+                    const windowDef = prioritizedWindowSet.findWindowByTag(mostCommonTag);
+                    if (windowDef) {
+                        const windowObj = new Window(window.id, windowDef);
+                        await windowDefRepo.setWindowDefinition(window.id, windowObj);
+                        await windowRepo.applyWindowDefinition(window.id, windowObj);
+                        const stickyNote = windowDef.isSticky() ? ' (sticky)' : '';
+                        logger.log(`[STARTUP] Tagged window ${window.id} as ${mostCommonTag}${stickyNote} based on ${maxCount}/${tabs.length} tabs`);
+                    }
                 }
             }
         }
 
-        logger.log('[STARTUP] Window tag restoration complete');
+        logger.log('[STARTUP] ClassifiedWindow tag restoration complete');
     } catch (e) {
         logger.error('[STARTUP] Error restoring window tags:', e);
     }
@@ -122,5 +139,5 @@ browser.tabs.onCreated.addListener((tab) => {
 
 // CLEANUP: Remove tags when windows close
 browser.windows.onRemoved.addListener((windowId) => {
-    void windowRepo.removeWindowTag(windowId as WindowId);
+    void windowDefRepo.removeWindowDefinition(windowId as WindowId);
 });
