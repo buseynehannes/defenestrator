@@ -1,44 +1,37 @@
-import { TabDispatcher } from "./domain/TabDispatcher.js";
-import { Window } from "./domain/Window";
 import { FirefoxWindowRepository } from "./adapters/FirefoxWindowRepository.js";
-import { FirefoxWindowDefinitionRepository } from "./adapters/FirefoxWindowDefinitionRepository.js";
-import { FirefoxTabRepository } from "./adapters/FirefoxTabRepository.js";
 import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
-import { BrowserStorageConfigurationStore } from "./adapters/BrowserStorageConfigurationStore.js";
-import { PrioritizedWindowSetFactory } from "./domain/PrioritizedWindowSet";
-import type { TabId } from "./domain/Tab.js";
+import { BrowserStorageNamedWindowsRepository } from "./adapters/BrowserStorageNamedWindowsRepository.js";
+import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
+import { TabUpdatedService } from "./application/services/TabUpdatedService.js";
+import { RestoreWindowTagsService } from "./application/services/RestoreWindowTagsService.js";
 import type { WindowId } from "./domain/WindowName";
+import { createTab, createTabId } from "./domain/Tab.js";
 
 declare const browser: typeof import("webextension-polyfill");
 
 // --- DEPENDENCY INJECTION / SETUP ---
 
 const logger = new ConsoleLogger();
-const windowRepo = new FirefoxWindowRepository(logger);
-const windowDefRepo = new FirefoxWindowDefinitionRepository(logger);
-const tabRepo = new FirefoxTabRepository();
-const configStore = new BrowserStorageConfigurationStore();
+const windowRepository = new FirefoxWindowRepository(logger);
+const namedWindowsRepository = new BrowserStorageNamedWindowsRepository(logger);
 
 // These will be initialized from configuration
-let dispatcher: TabDispatcher;
-let prioritizedWindowSet: ReturnType<typeof PrioritizedWindowSetFactory.create>;
+let tabUpdatedService: TabUpdatedService;
+let restoreWindowTagsService: RestoreWindowTagsService;
 
 // --- CONFIGURATION INITIALIZATION ---
 
 async function initializeConfiguration() {
     try {
         logger.log('[CONFIG] Loading configuration...');
-        const configData = await configStore.getConfiguration();
 
-        // Create the prioritized window set with the domain models
-        prioritizedWindowSet = PrioritizedWindowSetFactory.create(
-            configData.windows,
-            configData.defaultWindowTag,
-            configData.defaultWindowTheme,
-            configData.ignoredUrlPatterns
-        );
+        // Initialize TabUpdatedService with the configuration-based repository
+        const prioritizedSpecsRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
+        tabUpdatedService = new TabUpdatedService(namedWindowsRepository, prioritizedSpecsRepository, logger);
 
-        dispatcher = new TabDispatcher(prioritizedWindowSet, windowRepo, windowDefRepo, tabRepo, logger);
+        // Initialize RestoreWindowTagsService with TabUpdatedService
+        restoreWindowTagsService = new RestoreWindowTagsService(windowRepository, namedWindowsRepository, tabUpdatedService, logger);
+
         logger.log('[CONFIG] Configuration loaded successfully');
     } catch (e) {
         logger.error('[CONFIG] Error loading configuration:', e);
@@ -46,65 +39,26 @@ async function initializeConfiguration() {
     }
 }
 
-// --- STARTUP: Restore window tags after restart ---
+// --- STARTUP ---
 
-async function restoreWindowTags() {
-    try {
-        logger.log('[STARTUP] Restoring window tags...');
-        const windows = await windowRepo.getAllWindows();
-
-        for (const window of windows) {
-            // Analyze the window's tabs and tag it based on content
-            const tabs = await tabRepo.getTabsInWindow(window.id);
-            if (tabs.length > 0) {
-                // Probabilistic detection: count which tags appear most in this window
-                const tagCounts = new Map<string, { count: number; windowDef: any }>();
-
-                for (const tab of tabs) {
-                    const windowDetails = prioritizedWindowSet.getWindowDetailsForUrl(tab.url);
-
-                    if (windowDetails && windowDetails.tag) {
-                        const current = tagCounts.get(windowDetails.tag) || { count: 0, windowDef: windowDetails };
-                        tagCounts.set(windowDetails.tag, { count: current.count + 1, windowDef: windowDetails });
-                    }
-                }
-
-                // Find the most common tag
-                let mostCommonTag: string | null = null;
-                let mostCommonWindowDef: any = null;
-                let maxCount = 0;
-
-                for (const [tag, data] of tagCounts.entries()) {
-                    if (data.count > maxCount) {
-                        maxCount = data.count;
-                        mostCommonTag = tag;
-                        mostCommonWindowDef = data.windowDef;
-                    }
-                }
-
-                if (mostCommonTag && mostCommonWindowDef) {
-                    const windowDef = prioritizedWindowSet.findWindowByTag(mostCommonTag);
-                    if (windowDef) {
-                        const windowObj = new Window(window.id, windowDef);
-                        await windowDefRepo.setWindowDefinition(window.id, windowObj);
-                        await windowRepo.applyWindowDefinition(window.id, windowObj);
-                        const stickyNote = windowDef.isSticky() ? ' (sticky)' : '';
-                        logger.log(`[STARTUP] Tagged window ${window.id} as ${mostCommonTag}${stickyNote} based on ${maxCount}/${tabs.length} tabs`);
-                    }
-                }
-            }
-        }
-
-        logger.log('[STARTUP] ClassifiedWindow tag restoration complete');
-    } catch (e) {
-        logger.error('[STARTUP] Error restoring window tags:', e);
-    }
-}
-
-// Initialize configuration first, then restore tags
 async function startup() {
     await initializeConfiguration();
-    await restoreWindowTags();
+
+    // Restore window tags after initialization
+    if (restoreWindowTagsService) {
+        try {
+            const prioritizedSpecsRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
+            const prioritizedSpecs = await prioritizedSpecsRepository.getPrioritizedSpecifications();
+
+            if (prioritizedSpecs) {
+                await restoreWindowTagsService.execute(prioritizedSpecs);
+            } else {
+                logger.log('[STARTUP] No prioritized specifications available, skipping window restoration');
+            }
+        } catch (e) {
+            logger.error('[STARTUP] Error during window restoration:', e);
+        }
+    }
 }
 
 // Run on extension startup (Firefox restart or extension reload)
@@ -125,19 +79,17 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     }
 });
 
-browser.tabs.onUpdated.addListener((tabId, changeInfo, _tab) => {
-    if (changeInfo.url && dispatcher) {
-        void dispatcher.dispatch(tabId as TabId, changeInfo.url);
+browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url && tabUpdatedService && tab.windowId !== undefined) {
+        const browserTab = createTab(createTabId(tabId), changeInfo.url);
+        void tabUpdatedService.execute(browserTab, tab.windowId as WindowId);
     }
 });
 
 browser.tabs.onCreated.addListener((tab) => {
-    if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && dispatcher) {
-        void dispatcher.dispatch(tab.id as TabId, tab.url);
+    if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && tab.windowId !== undefined && tabUpdatedService) {
+        const browserTab = createTab(createTabId(tab.id), tab.url);
+        void tabUpdatedService.execute(browserTab, tab.windowId as WindowId);
     }
 });
 
-// CLEANUP: Remove tags when windows close
-browser.windows.onRemoved.addListener((windowId) => {
-    void windowDefRepo.removeWindowDefinition(windowId as WindowId);
-});

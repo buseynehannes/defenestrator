@@ -6,7 +6,6 @@
 import type { NamedWindow } from "../../domain/NamedWindow";
 import type { WindowId } from "../../domain/WindowName";
 import type { NamedWindowSpecification } from "../../domain/specifications/NamedWindowSpecification";
-import type { Option } from "fp-ts/Option";
 
 export interface NamedWindowsRepository {
     /**
@@ -22,12 +21,17 @@ export interface NamedWindowsRepository {
     /**
      * Get a named window by its window ID
      */
-    getNamedWindow(windowId: WindowId): Promise<Option<NamedWindow>>;
+    getNamedWindow(windowId: WindowId): Promise<NamedWindow | null>;
 
     /**
      * Find a named window by its specification
      */
-    findNamedWindowBySpecification(specification: NamedWindowSpecification): Promise<Option<NamedWindow>>;
+    findNamedWindowBySpecification(specification: NamedWindowSpecification): Promise<NamedWindow | null>;
+
+    /**
+     * Get all named windows
+     */
+    getAllNamedWindows(): Promise<readonly NamedWindow[]>;
 
     /**
      * Delete a named window's saved specification

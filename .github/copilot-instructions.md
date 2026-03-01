@@ -15,7 +15,6 @@ Strictly adhere to Hexagonal Architecture principles across the codebase:
 ## Functional Programming Principles
 * **Pure Functions:** Whenever possible, write pure functions that do not cause side effects and always return the same output for the same input.
 * **Immutability:** Avoid mutating data. Use immutable data structures and patterns to ensure predictability and easier debugging.
-* **fp-ts Library:** Leverage the `fp-ts` library for functional programming constructs, such as `Option`, `Either`, and `Task`, to handle errors and asynchronous operations in a functional way.
 
 ## 🤖 Copilot Operational Rules
 * **Direct File Manipulation:** Always read from and edit files directly. Do not suggest or run terminal commands to read, modify, or create files.

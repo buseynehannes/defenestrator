@@ -4,13 +4,12 @@
  */
 
 import type { PrioritizedNamedWindowSpecifications } from "../../domain/specifications/PrioritizedNamedWindowSpecifications";
-import type { Option } from "fp-ts/Option";
 
 export interface PrioritizedNamedWindowSpecificationsRepository {
     /**
      * Get the current prioritized window specifications
      */
-    getPrioritizedSpecifications(): Promise<Option<PrioritizedNamedWindowSpecifications>>;
+    getPrioritizedSpecifications(): Promise<PrioritizedNamedWindowSpecifications | null>;
 }
 
 

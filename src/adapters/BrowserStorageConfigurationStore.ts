@@ -1,9 +1,32 @@
-import type { ConfigurationStore, ConfigurationData } from "../domain/ConfigurationStore.js";
-import { DEFAULT_CONFIGURATION_DATA } from "../domain/ConfigurationStore.js";
+import type { ConfigurationData, ConfigurationStore } from "../application/ports/ConfigurationStore";
 
 declare const browser: typeof import("webextension-polyfill");
 
+// Default configuration
+const DEFAULT_CONFIGURATION_DATA: ConfigurationData = {
+    windows: [
+        {
+            tag: '[WORK]',
+            match: ['github.com', 'gitlab.com', 'jira', 'confluence'],
+            theme: { accentColor: '#3498db', textColor: '#ffffff' }
+        },
+        {
+            tag: '[RESEARCH]',
+            match: ['wikipedia.org', 'stackoverflow.com', 'mdn.org'],
+            theme: { accentColor: '#9b59b6', textColor: '#ffffff' }
+        },
+        {
+            tag: '[DEFAULT]',
+            match: [],
+            theme: { accentColor: '#95a5a6', textColor: '#ffffff' }
+        }
+    ],
+    defaultWindowTag: '[DEFAULT]',
+    ignoredUrlPatterns: ['about:', 'moz-extension:']
+};
+
 const STORAGE_KEY = "defenestrator_config";
+
 
 export class BrowserStorageConfigurationStore implements ConfigurationStore {
     async getConfiguration(): Promise<ConfigurationData> {

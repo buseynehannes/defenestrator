@@ -8,12 +8,9 @@ import type { WindowId } from "../../domain/WindowName";
 import type { NamedWindowsRepository } from "../ports/NamedWindowsRepository";
 import type { PrioritizedNamedWindowSpecificationsRepository } from "../ports/PrioritizedNamedWindowSpecificationsRepository";
 import type { Logger } from "../ports/Logger";
-import { findSpecificationForTab } from "../../domain/specifications/PrioritizedNamedWindowSpecifications";
+import { findSpecificationForTab, nameWindows as nameWindowsAggregate } from "../../domain/NamedWindows";
 import { createNamedWindow } from "../../domain/NamedWindow";
 import { createWindow } from "../../domain/Window";
-import type { NamedWindowSpecification } from "../../domain/specifications/NamedWindowSpecification";
-import { pipe } from "fp-ts/function";
-import { match } from "fp-ts/Option";
 
 export class TabUpdatedService {
     constructor(
@@ -25,77 +22,58 @@ export class TabUpdatedService {
     async execute(tab: Tab, currentWindowId: WindowId): Promise<void> {
         try {
             // Get the named window that currently contains this tab
-            const currentNamedWindowOption = await this.namedWindowsRepository.getNamedWindow(currentWindowId);
+            const currentNamedWindow = await this.namedWindowsRepository.getNamedWindow(currentWindowId);
 
             // Check if the current window should keep this tab
-            const shouldStay = pipe(
-                currentNamedWindowOption,
-                match(
-                    () => false,
-                    (namedWindow) => namedWindow.specification.shouldKeepTab(tab)
-                )
-            );
-
-            if (shouldStay) {
+            if (currentNamedWindow && currentNamedWindow.shouldKeep(tab)) {
                 this.logger.log(`[TAB] Tab ${tab.id} stays in window ${currentWindowId}`);
                 return;
             }
 
             // Fetch the prioritized specifications
-            const prioritizedSpecsOption = await this.prioritizedSpecsRepository.getPrioritizedSpecifications();
+            const prioritizedSpecs = await this.prioritizedSpecsRepository.getPrioritizedSpecifications();
+
+            if (!prioritizedSpecs) {
+                this.logger.log(`[TAB] No prioritized specifications available`);
+                return;
+            }
+
+            // Create a NamedWindows aggregate from existing named windows
+            const allNamedWindows = await this.namedWindowsRepository.getAllNamedWindows();
+            const windowMap = new Map(
+                allNamedWindows.map((nw: typeof allNamedWindows[number]) => [nw.specification, nw.window])
+            );
+            const namedWindows = nameWindowsAggregate(prioritizedSpecs.specifications, Array.from(windowMap.values()).filter(w => w !== null) as any);
 
             // Find which specification accepts this tab
-            const acceptingSpecOption = pipe(
-                prioritizedSpecsOption,
-                match(
-                    () => null,
-                    (specs) => findSpecificationForTab(specs, tab)
-                )
-            );
+            const acceptingSpec = findSpecificationForTab(namedWindows, tab);
 
-            if (!acceptingSpecOption) {
+            if (!acceptingSpec) {
                 this.logger.log(`[TAB] No specification accepts tab ${tab.id}`);
                 return;
             }
 
-            await pipe(
-                acceptingSpecOption,
-                match(
-                    () => Promise.resolve(),
-                    async (acceptingSpec) => {
-                        // Try to fetch an existing NamedWindow with this specification
-                        const targetNamedWindowOption = await this.namedWindowsRepository.findNamedWindowBySpecification(acceptingSpec);
+            // Try to fetch an existing NamedWindow with this specification
+            const targetNamedWindow = await this.namedWindowsRepository.findNamedWindowBySpecification(acceptingSpec);
 
-                        const targetNamedWindow = await pipe(
-                            targetNamedWindowOption,
-                            match(
-                                async () => {
-                                    // Create a new window with just this tab
-                                    const newWindow = createWindow(currentWindowId, [tab]);
-                                    const namedWindow = createNamedWindow(newWindow, acceptingSpec);
-                                    this.logger.log(`[TAB] Created new NamedWindow for specification ${acceptingSpec.name}`);
-                                    return namedWindow;
-                                },
-                                async (existingWindow) => {
-                                    // Add tab to the existing NamedWindow
-                                    const updatedWindow = createWindow(
-                                        existingWindow.window.id,
-                                        [...existingWindow.window.tabs, tab]
-                                    );
-                                    return createNamedWindow(updatedWindow, acceptingSpec);
-                                }
-                            )
-                        );
+            if (targetNamedWindow) {
+                // Move tab to target window
+                const updatedTargetWindow = targetNamedWindow.addTab(tab);
 
-                        // Save the updated NamedWindow
-                        await this.namedWindowsRepository.saveNamedWindow(targetNamedWindow);
+                await this.namedWindowsRepository.saveNamedWindow(updatedTargetWindow);
+                if (currentNamedWindow) {
+                    const updatedCurrentWindow = currentNamedWindow.removeTab(tab);
+                    await this.namedWindowsRepository.saveNamedWindow(updatedCurrentWindow);
+                }
 
-                        this.logger.log(
-                            `[TAB] Tab ${tab.id} moved to window ${targetNamedWindow.window.id} (${acceptingSpec.name})`
-                        );
-                    }
-                )
-            );
+                this.logger.log(`[TAB] Tab ${tab.id} moved to window ${updatedTargetWindow.window.id} (${acceptingSpec.name})`);
+            } else {
+                // Create a new window with just this tab
+                const newWindow = createWindow(currentWindowId, [tab]);
+                const namedWindow = createNamedWindow(newWindow, acceptingSpec);
+                await this.namedWindowsRepository.saveNamedWindow(namedWindow);
+                this.logger.log(`[TAB] Created new NamedWindow for specification ${acceptingSpec.name}`);
+            }
         } catch (e) {
             this.logger.error('[TAB] Error handling tab update:', e);
             throw e;

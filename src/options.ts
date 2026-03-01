@@ -1,453 +1,387 @@
 import { BrowserStorageConfigurationStore } from "./adapters/BrowserStorageConfigurationStore.js";
-import { DEFAULT_CONFIGURATION_DATA } from "./domain/ConfigurationStore.js";
-import type { ConfigurationData } from "./domain/ConfigurationStore.js";
+import type { ConfigurationData } from "./application/ports/ConfigurationStore";
 
 declare const browser: typeof import("webextension-polyfill");
+
+
+// Default configuration with sensible starting values
+const DEFAULT_CONFIGURATION_DATA: ConfigurationData = {
+    windows: [
+        {
+            tag: '[WORK]',
+            match: ['github.com', 'gitlab.com', 'jira', 'confluence'],
+            theme: {
+                accentColor: '#3498db',
+                textColor: '#ffffff'
+            }
+        },
+        {
+            tag: '[RESEARCH]',
+            match: ['wikipedia.org', 'stackoverflow.com', 'mdn.org'],
+            theme: {
+                accentColor: '#9b59b6',
+                textColor: '#ffffff'
+            }
+        },
+        {
+            tag: '[DEFAULT]',
+            match: [],
+            theme: {
+                accentColor: '#95a5a6',
+                textColor: '#ffffff'
+            }
+        }
+    ],
+    defaultWindowTag: '[DEFAULT]',
+    ignoredUrlPatterns: ['about:', 'moz-extension:']
+};
 
 const configStore = new BrowserStorageConfigurationStore();
 let currentConfig: ConfigurationData;
 
-// DOM Elements (will be initialized on DOMContentLoaded)
-let windowsContainer: HTMLElement;
-let globalRulesContainer: HTMLElement;
-let defaultWindowSelect: HTMLSelectElement;
+// DOM Elements
+let specsList: HTMLElement;
 let statusMessage: HTMLElement;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize DOM elements after DOM is ready
-    windowsContainer = document.getElementById('windowsContainer')!;
-    globalRulesContainer = document.getElementById('globalRulesContainer')!;
-    defaultWindowSelect = document.getElementById('defaultWindowSelect') as HTMLSelectElement;
+    specsList = document.getElementById('specsList')!;
     statusMessage = document.getElementById('statusMessage')!;
 
-    await loadConfiguration();
-    setupEventListeners();
+    // Verify elements exist
+    if (!specsList || !statusMessage) {
+        console.error('[OPTIONS] Required DOM elements not found');
+        return;
+    }
+
+    try {
+        await loadConfiguration();
+        setupEventListeners();
+    } catch (error) {
+        console.error('[OPTIONS] Initialization error:', error);
+        if (statusMessage) {
+            statusMessage.textContent = 'Error loading configuration';
+            statusMessage.className = 'status-message error';
+            statusMessage.style.display = 'block';
+        }
+    }
 });
 
 async function loadConfiguration() {
     currentConfig = await configStore.getConfiguration();
-    renderWindows();
-    renderGlobalRules();
-    renderDefaultWindowSelect();
+    renderSpecs();
 }
 
-function renderWindows() {
-    windowsContainer.innerHTML = '';
+function renderSpecs() {
+    if (!specsList) {
+        console.error('[OPTIONS] specsList element not found');
+        return;
+    }
+
+    specsList.innerHTML = '';
 
     if (currentConfig.windows.length === 0) {
-        windowsContainer.innerHTML = '<div class="empty-state">No windows defined. Click "Add ClassifiedWindow" to create one.</div>';
+        specsList.innerHTML = '<div class="empty-state">No specifications configured yet.</div>';
         return;
     }
 
     currentConfig.windows.forEach((windowDef, index) => {
         const isDefault = index === currentConfig.windows.length - 1;
-        const windowDiv = document.createElement('div');
-        windowDiv.className = `window-item ${isDefault ? 'window-default' : ''}`;
 
-        const theme = windowDef.theme || {};
-        const accentColor = theme.accentColor || '#3498db';
-        const textColor = theme.textColor || '#ffffff';
-        const frameColor = theme.frameColor || '';
-        const tabBgText = theme.tabBackgroundText || '';
-        const isSticky = windowDef.sticky === true;
-        const matchPatterns = windowDef.match.join('\n');
+        const specItem = document.createElement('div');
+        specItem.className = `spec-item ${isDefault ? 'is-default' : ''}`;
+        specItem.dataset.index = String(index);
 
-        windowDiv.innerHTML = `
-            <div class="window-header">
-                <div class="window-title">
-                    <input type="text" class="window-tag" data-index="${index}" value="${escapeHtml(windowDef.tag)}" placeholder="e.g., [DEV]">
-                    ${isDefault ? '<span class="badge-default">Default ClassifiedWindow</span>' : ''}
-                </div>
-                <div class="window-controls">
-                    ${index > 0 ? `<button class="btn-small btn-up" data-index="${index}">↑ Move Up</button>` : ''}
-                    ${index < currentConfig.windows.length - 1 ? `<button class="btn-small btn-down" data-index="${index}">↓ Move Down</button>` : ''}
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Match Keywords (one per line)</label>
-                <textarea class="window-match" data-index="${index}" rows="3" ${isDefault ? 'disabled' : ''} placeholder="github.com&#10;gitlab.com">${escapeHtml(matchPatterns)}</textarea>
-                ${isDefault ? '<small>Default window has no matching rules - all unmatched tabs go here</small>' : ''}
-            </div>
-            <div class="form-group">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" class="window-sticky" data-index="${index}" ${isSticky ? 'checked' : ''}>
-                    <span>📌 Sticky Window (prevent tabs from being auto-moved)</span>
-                </label>
-            </div>
-            <div class="theme-section">
-                <h4>🎨 Window Theme</h4>
-                <div class="theme-colors">
-                    <div class="color-picker-group">
-                        <label>Toolbar Color</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" class="theme-accent" data-index="${index}" value="${accentColor}">
-                            <span class="color-value">${accentColor}</span>
-                        </div>
-                    </div>
-                    <div class="color-picker-group">
-                        <label>Text Color</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" class="theme-text" data-index="${index}" value="${textColor}">
-                            <span class="color-value">${textColor}</span>
-                        </div>
-                    </div>
-                    <div class="color-picker-group">
-                        <label>Frame Color (optional)</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" class="theme-frame" data-index="${index}" value="${frameColor || '#333333'}">
-                            <span class="color-value">${frameColor || 'none'}</span>
-                        </div>
-                    </div>
-                    <div class="color-picker-group">
-                        <label>Tab Text (optional)</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" class="theme-tab-text" data-index="${index}" value="${tabBgText || '#000000'}">
-                            <span class="color-value">${tabBgText || 'none'}</span>
-                        </div>
-                    </div>
+        const stickyBadge = windowDef.sticky ? '📌' : '';
+        const accentColor = windowDef.theme?.accentColor || '#3498db';
+        const textColor = windowDef.theme?.textColor || '#ffffff';
+        const rulesText = windowDef.match.join('\n');
+
+        specItem.innerHTML = `
+            <div class="spec-bar">
+                <span class="spec-sticky">${stickyBadge}</span>
+                <span class="spec-name">${escapeHtml(windowDef.tag)}</span>
+                ${isDefault ? '<span class="default-badge">Default</span>' : ''}
+                <div class="spec-controls">
+                    ${index > 0 ? `<button class="btn-icon btn-move-up" title="Move up in priority">↑</button>` : ''}
+                    ${index < currentConfig.windows.length - 1 ? `<button class="btn-icon btn-move-down" title="Move down in priority">↓</button>` : ''}
+                    ${!isDefault ? `<button class="btn-icon btn-delete" title="Delete">🗑</button>` : ''}
                 </div>
             </div>
-            <div class="button-group">
-                ${!isDefault ? `<button class="btn-danger btn-remove-window" data-index="${index}">Remove Window</button>` : ''}
+
+            <div class="spec-content">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" class="spec-name-input" value="${escapeHtml(windowDef.tag)}" placeholder="e.g., Work, Research">
+                </div>
+
+                ${!isDefault ? `
+                    <div class="spec-content-row">
+                        <div class="form-group">
+                            <label>URL Keywords (one per line)</label>
+                            <textarea class="spec-rules-input" placeholder="github.com&#10;gitlab.com&#10;jira.company.com">${escapeHtml(rulesText)}</textarea>
+                            <small>Tabs with URLs matching these keywords will be assigned to this window</small>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="info-box">
+                        This is the default window. Tabs that don't match any other specification will go here.
+                    </div>
+                `}
+
+                <div class="spec-content-row">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" class="spec-sticky-input" ${windowDef.sticky ? 'checked' : ''}>
+                            📌 Sticky (prevent automatic tab reassignment)
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Theme Colors</label>
+                        <div class="color-section">
+                            <div class="color-picker">
+                                <label>Toolbar</label>
+                                <input type="color" class="spec-accent-input" value="${accentColor}">
+                            </div>
+                            <div class="color-picker">
+                                <label>Text</label>
+                                <input type="color" class="spec-text-input" value="${textColor}">
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
-        windowsContainer.appendChild(windowDiv);
-    });
 
-    // Add event listeners for windows
-    document.querySelectorAll('.window-tag').forEach(input => {
-        input.addEventListener('input', handleWindowTagChange);
-    });
-    document.querySelectorAll('.window-match').forEach(textarea => {
-        textarea.addEventListener('input', handleWindowMatchChange);
-    });
-    document.querySelectorAll('.window-sticky').forEach(checkbox => {
-        checkbox.addEventListener('change', handleWindowStickyChange);
-    });
-    document.querySelectorAll('.theme-accent, .theme-text, .theme-frame, .theme-tab-text').forEach(input => {
-        input.addEventListener('input', handleThemeChange);
-    });
-    document.querySelectorAll('.btn-remove-window').forEach(btn => {
-        btn.addEventListener('click', handleRemoveWindow);
-    });
-    document.querySelectorAll('.btn-up').forEach(btn => {
-        btn.addEventListener('click', handleMoveUp);
-    });
-    document.querySelectorAll('.btn-down').forEach(btn => {
-        btn.addEventListener('click', handleMoveDown);
-    });
-}
+        specsList.appendChild(specItem);
 
-function renderGlobalRules() {
-    globalRulesContainer.innerHTML = '';
+        // Add event listeners
+        const bar = specItem.querySelector('.spec-bar') as HTMLElement;
+        bar.addEventListener('click', () => toggleExpanded(specItem));
 
-    if (currentConfig.ignoredUrlPatterns.length === 0) {
-        globalRulesContainer.innerHTML = '<div class="empty-state">No ignored patterns defined.</div>';
-        return;
-    }
-
-    currentConfig.ignoredUrlPatterns.forEach((pattern, index) => {
-        const patternDiv = document.createElement('div');
-        patternDiv.className = 'pattern-item';
-        patternDiv.innerHTML = `
-            <div class="form-group">
-                <label>URL Pattern Prefix</label>
-                <input type="text" class="pattern-value" data-index="${index}" value="${escapeHtml(pattern)}">
-            </div>
-            <div class="button-group">
-                <button class="btn-danger btn-remove-pattern" data-index="${index}">Remove Pattern</button>
-            </div>
-        `;
-        globalRulesContainer.appendChild(patternDiv);
-    });
-
-    // Add event listeners for patterns
-    document.querySelectorAll('.pattern-value').forEach(input => {
-        input.addEventListener('input', handlePatternChange);
-    });
-    document.querySelectorAll('.btn-remove-pattern').forEach(btn => {
-        btn.addEventListener('click', handleRemovePattern);
-    });
-}
-
-function renderDefaultWindowSelect() {
-    defaultWindowSelect.innerHTML = '';
-    currentConfig.windows.forEach((windowDef, index) => {
-        const option = document.createElement('option');
-        option.value = String(index);
-        option.textContent = windowDef.tag;
-        if (index === currentConfig.windows.length - 1) {
-            option.selected = true;
-            option.textContent += ' (current default)';
+        const moveUpBtn = specItem.querySelector('.btn-move-up');
+        if (moveUpBtn) {
+            moveUpBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleMoveUp(index);
+            });
         }
-        defaultWindowSelect.appendChild(option);
+
+        const moveDownBtn = specItem.querySelector('.btn-move-down');
+        if (moveDownBtn) {
+            moveDownBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleMoveDown(index);
+            });
+        }
+
+        const deleteBtn = specItem.querySelector('.btn-delete');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleDeleteSpec(index);
+            });
+        }
+
+        // Auto-save on input changes
+        const inputs = specItem.querySelectorAll('input, textarea');
+        inputs.forEach(input => {
+            input.addEventListener('change', () => saveSpecChanges(index));
+        });
     });
 }
 
-// Event handlers for windows
-function handleWindowTagChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const index = parseInt(target.dataset.index!);
-    const windows = [...currentConfig.windows];
-    const currentWindow = windows[index];
-
-    if (!currentWindow) return;
-
-    windows[index] = { ...currentWindow, tag: target.value };
-    currentConfig = { ...currentConfig, windows };
+function toggleExpanded(specItem: Element) {
+    specItem.classList.toggle('expanded');
 }
 
-function handleWindowMatchChange(event: Event) {
-    const target = event.target as HTMLTextAreaElement;
-    const index = parseInt(target.dataset.index!);
-    const isDefault = index === currentConfig.windows.length - 1;
+function saveSpecChanges(index: number) {
+    const specItem = document.querySelector(`[data-index="${index}"]`);
+    if (!specItem) return;
 
-    if (isDefault) return; // Can't change match for default window
+    const name = (specItem.querySelector('.spec-name-input') as HTMLInputElement)?.value.trim();
+    const rulesText = (specItem.querySelector('.spec-rules-input') as HTMLTextAreaElement)?.value || '';
+    const isSticky = (specItem.querySelector('.spec-sticky-input') as HTMLInputElement)?.checked || false;
+    const accentColor = (specItem.querySelector('.spec-accent-input') as HTMLInputElement)?.value || '#3498db';
+    const textColor = (specItem.querySelector('.spec-text-input') as HTMLInputElement)?.value || '#ffffff';
 
-    const windows = [...currentConfig.windows];
-    const currentWindow = windows[index];
+    if (!name) return;
 
-    if (!currentWindow) return;
-
-    const match = target.value.split('\n')
+    const rules = rulesText
+        .split('\n')
         .map(s => s.trim())
         .filter(s => s.length > 0);
 
-    windows[index] = { ...currentWindow, match };
-    currentConfig = { ...currentConfig, windows };
-}
-
-function handleWindowStickyChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const index = parseInt(target.dataset.index!);
     const windows = [...currentConfig.windows];
-    const currentWindow = windows[index];
+    const oldDef = windows[index];
 
-    if (!currentWindow) return;
+    if (!oldDef) return;
 
-    windows[index] = { ...currentWindow, sticky: target.checked };
-    currentConfig = { ...currentConfig, windows };
-}
-
-function handleThemeChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const index = parseInt(target.dataset.index!);
-    const windows = [...currentConfig.windows];
-    const currentWindow = windows[index];
-
-    if (!currentWindow) return;
-
-    const theme = currentWindow.theme || {};
-
-    // Create new theme object with updated property
-    let updatedTheme;
-    if (target.classList.contains('theme-accent')) {
-        updatedTheme = { ...theme, accentColor: target.value };
-    } else if (target.classList.contains('theme-text')) {
-        updatedTheme = { ...theme, textColor: target.value };
-    } else if (target.classList.contains('theme-frame')) {
-        updatedTheme = { ...theme, frameColor: target.value };
-    } else if (target.classList.contains('theme-tab-text')) {
-        updatedTheme = { ...theme, tabBackgroundText: target.value };
-    } else {
-        updatedTheme = theme;
-    }
-
-    windows[index] = { ...currentWindow, theme: updatedTheme };
-    currentConfig = { ...currentConfig, windows };
-
-    // Update the color value display
-    const colorValueSpan = target.nextElementSibling as HTMLSpanElement;
-    if (colorValueSpan) {
-        colorValueSpan.textContent = target.value;
-    }
-}
-
-function handlePatternChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const index = parseInt(target.dataset.index!);
-    const patterns = [...currentConfig.ignoredUrlPatterns];
-    patterns[index] = target.value;
-    currentConfig = {
-        ...currentConfig,
-        ignoredUrlPatterns: patterns
+    windows[index] = {
+        ...oldDef!,
+        tag: name,
+        match: index === currentConfig.windows.length - 1 ? oldDef!.match : rules,
+        sticky: isSticky,
+        theme: {
+            accentColor,
+            textColor
+        }
     };
-}
 
-function handleRemoveWindow(event: Event) {
-    const target = event.target as HTMLButtonElement;
-    const index = parseInt(target.dataset.index!);
-    // Don't allow removing the default window
-    if (index === currentConfig.windows.length - 1) {
-        showStatus('Cannot remove the default window', 'error');
-        return;
-    }
-    const windows = currentConfig.windows.filter((_, i) => i !== index);
     currentConfig = { ...currentConfig, windows };
-    renderWindows();
-    renderDefaultWindowSelect();
+
+    // Update the display name in the bar
+    const specNameDisplay = specItem.querySelector('.spec-name') as HTMLElement;
+    if (specNameDisplay && !specNameDisplay.classList.contains('spec-name-input')) {
+        specNameDisplay.textContent = name;
+    }
 }
 
-function handleRemovePattern(event: Event) {
-    const target = event.target as HTMLButtonElement;
-    const index = parseInt(target.dataset.index!);
-    const patterns = currentConfig.ignoredUrlPatterns.filter((_, i) => i !== index);
-    currentConfig = {
-        ...currentConfig,
-        ignoredUrlPatterns: patterns
-    };
-    renderGlobalRules();
-}
-
-function handleMoveUp(event: Event) {
-    const target = event.target as HTMLButtonElement;
-    const index = parseInt(target.dataset.index!);
-    if (index === 0) return; // Can't move first window up
-
+function handleMoveUp(index: number) {
+    if (index <= 0) return;
     const windows = [...currentConfig.windows];
     const temp = windows[index - 1]!;
     windows[index - 1] = windows[index]!;
     windows[index] = temp;
     currentConfig = { ...currentConfig, windows };
-    renderWindows();
-    renderDefaultWindowSelect();
+    renderSpecs();
 }
 
-function handleMoveDown(event: Event) {
-    const target = event.target as HTMLButtonElement;
-    const index = parseInt(target.dataset.index!);
-    if (index >= currentConfig.windows.length - 1) return; // Can't move last window down
-
+function handleMoveDown(index: number) {
+    if (index >= currentConfig.windows.length - 1) return;
     const windows = [...currentConfig.windows];
     const temp = windows[index]!;
     windows[index] = windows[index + 1]!;
     windows[index + 1] = temp;
     currentConfig = { ...currentConfig, windows };
-    renderWindows();
-    renderDefaultWindowSelect();
+    renderSpecs();
+}
+
+function handleDeleteSpec(index: number) {
+    if (index === currentConfig.windows.length - 1) {
+        showStatus('Cannot delete the default window', 'error');
+        return;
+    }
+
+    const windowToDelete = currentConfig.windows[index];
+    if (!windowToDelete) {
+        return;
+    }
+
+    if (confirm(`Delete "${windowToDelete.tag}"? This cannot be undone.`)) {
+        const windows = currentConfig.windows.filter((_, i) => i !== index);
+        currentConfig = { ...currentConfig, windows };
+        renderSpecs();
+    }
 }
 
 function setupEventListeners() {
-    document.getElementById('addWindowBtn')!.addEventListener('click', () => {
-        const windows = [...currentConfig.windows];
-        // Insert before the default window
-        windows.splice(windows.length - 1, 0, {
-            tag: '[NEW]',
-            match: ['example.com'],
-            theme: { accentColor: '#3498db', textColor: '#ffffff' }
-        });
-        currentConfig = { ...currentConfig, windows };
-        renderWindows();
-        renderDefaultWindowSelect();
-    });
+    const addSpecBtn = document.getElementById('addSpecBtn');
+    const saveBtn = document.getElementById('saveConfigBtn');
+    const resetBtn = document.getElementById('resetConfigBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
 
-    document.getElementById('addPatternBtn')!.addEventListener('click', () => {
-        const patterns = [...currentConfig.ignoredUrlPatterns, 'new-pattern:'];
-        currentConfig = {
-            ...currentConfig,
-            ignoredUrlPatterns: patterns
-        };
-        renderGlobalRules();
-    });
-
-    document.getElementById('saveBtn')!.addEventListener('click', async () => {
-        try {
-            await configStore.saveConfiguration(currentConfig);
-            showStatus('Configuration saved successfully! Changes will take effect immediately.', 'success');
-
-            // Notify background script to reload configuration
-            await browser.runtime.sendMessage({ type: 'configUpdated' });
-        } catch (error) {
-            showStatus('Error saving configuration: ' + (error as Error).message, 'error');
-        }
-    });
-
-    document.getElementById('resetBtn')!.addEventListener('click', async () => {
-        if (confirm('Are you sure you want to reset to default configuration? This cannot be undone.')) {
-            currentConfig = DEFAULT_CONFIGURATION_DATA;
-            renderWindows();
-            renderGlobalRules();
-            renderDefaultWindowSelect();
-            showStatus('Reset to default configuration. Click "Save" to apply.', 'success');
-        }
-    });
-
-    document.getElementById('exportBtn')!.addEventListener('click', () => {
-        const json = JSON.stringify(currentConfig, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'defenestrator-config.json';
-        a.click();
-        URL.revokeObjectURL(url);
-        showStatus('Configuration exported successfully!', 'success');
-    });
-
-    document.getElementById('importBtn')!.addEventListener('click', () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'application/json';
-        input.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
-
-            try {
-                const text = await file.text();
-                const imported = JSON.parse(text);
-
-                // Validate structure before using
-                if (!imported || typeof imported !== 'object') {
-                    showStatus('Error importing configuration: Invalid JSON format', 'error');
-                    return;
-                }
-
-                if (!imported.windows || !Array.isArray(imported.windows)) {
-                    showStatus('Error importing configuration: missing windows array', 'error');
-                    return;
-                }
-
-                if (!imported.ignoredUrlPatterns || !Array.isArray(imported.ignoredUrlPatterns)) {
-                    showStatus('Error importing configuration: missing ignoredUrlPatterns', 'error');
-                    return;
-                }
-
-                currentConfig = imported as ConfigurationData;
-                renderWindows();
-                renderGlobalRules();
-                renderDefaultWindowSelect();
-                showStatus('Configuration imported successfully! Click "Save" to apply.', 'success');
-            } catch (error) {
-                showStatus('Error importing configuration: ' + (error as Error).message, 'error');
-            }
-        };
-        input.click();
-    });
-
-    document.getElementById('defaultWindowSelect')!.addEventListener('change', (e) => {
-        const selectedIndex = parseInt((e.target as HTMLSelectElement).value);
-        if (selectedIndex >= 0 && selectedIndex < currentConfig.windows.length - 1) {
-            // Swap the selected window to be last (default)
+    if (addSpecBtn) {
+        addSpecBtn.addEventListener('click', () => {
             const windows = [...currentConfig.windows];
-            const selected = windows[selectedIndex]!;
-            windows[selectedIndex] = windows[windows.length - 1]!;
-            windows[windows.length - 1] = selected;
+            windows.splice(windows.length - 1, 0, {
+                tag: 'New Specification',
+                match: ['example.com'],
+                theme: { accentColor: '#3498db', textColor: '#ffffff' }
+            });
             currentConfig = { ...currentConfig, windows };
-            renderWindows();
-            renderDefaultWindowSelect();
-        }
-    });
+            renderSpecs();
+
+            // Auto-expand the new spec for editing
+            setTimeout(() => {
+                const newItem = document.querySelector(`[data-index="${windows.length - 2}"]`);
+                if (newItem) {
+                    newItem.classList.add('expanded');
+                    const input = newItem.querySelector('.spec-name-input') as HTMLInputElement;
+                    input?.select();
+                }
+            }, 0);
+        });
+    }
+
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+            try {
+                await configStore.saveConfiguration(currentConfig);
+                showStatus('✓ Configuration saved successfully', 'success');
+                await browser.runtime.sendMessage({ type: 'configUpdated' });
+            } catch (error) {
+                showStatus('Error saving: ' + (error as Error).message, 'error');
+            }
+        });
+    }
+
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            if (confirm('Reset to default configuration?')) {
+                currentConfig = DEFAULT_CONFIGURATION_DATA;
+                renderSpecs();
+                showStatus('Reset to defaults. Click Save to apply.', 'success');
+            }
+        });
+    }
+
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            const json = JSON.stringify(currentConfig, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'defenestrator-config.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            showStatus('✓ Configuration exported', 'success');
+        });
+    }
+
+    if (importBtn) {
+        importBtn.addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'application/json';
+            input.onchange = async (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (!file) return;
+
+                try {
+                    const text = await file.text();
+                    const imported = JSON.parse(text);
+
+                    if (!imported.windows || !Array.isArray(imported.windows)) {
+                        showStatus('Error importing: Invalid configuration format', 'error');
+                        return;
+                    }
+
+                    currentConfig = imported as ConfigurationData;
+                    renderSpecs();
+                    showStatus('✓ Configuration imported. Click Save to apply.', 'success');
+                } catch (error) {
+                    showStatus('Error importing: ' + (error as Error).message, 'error');
+                }
+            };
+            input.click();
+        });
+    }
 }
 
 function showStatus(message: string, type: 'success' | 'error') {
+    if (!statusMessage) return;
+
     statusMessage.textContent = message;
     statusMessage.className = `status-message ${type}`;
     statusMessage.style.display = 'block';
 
     setTimeout(() => {
         statusMessage.style.display = 'none';
-    }, 5000);
+    }, 4000);
 }
 
 function escapeHtml(text: string): string {
