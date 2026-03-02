@@ -4,6 +4,9 @@ import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./a
 import { InMemoryNamedWindowsRepository } from "./adapters/InMemoryNamedWindowsRepository.js";
 import { UpdateTabService } from "./application/services/UpdateTabService.js";
 import { RestoreNamedWindowsService } from "./application/services/RestoreNamedWindowsService.js";
+import { HandleTabMovedService } from "./application/services/HandleTabMovedService.js";
+import { HandleNewWindowCreatedService } from "./application/services/HandleNewWindowCreatedService.js";
+import { HandleWindowSpecAssignedService } from "./application/services/HandleWindowSpecAssignedService.js";
 import { createTab, createTabId } from "./domain/Tab.js";
 
 declare const browser: typeof import("webextension-polyfill");
@@ -17,6 +20,18 @@ const namedWindowsRepository = new InMemoryNamedWindowsRepository(logger);
 
 const updateTabService = new UpdateTabService(namedWindowsRepository, logger);
 const restoreNamedWindowsService = new RestoreNamedWindowsService(windowRepository, prioritizedSpecsRepository, namedWindowsRepository, logger);
+
+const handleTabMovedService = new HandleTabMovedService(logger);
+const handleNewWindowCreatedService = new HandleNewWindowCreatedService(logger);
+const handleWindowSpecAssignedService = new HandleWindowSpecAssignedService(logger);
+
+namedWindowsRepository.onEvent(event => {
+    switch (event.type) {
+        case 'TAB_MOVED':            return handleTabMovedService.execute(event);
+        case 'NEW_WINDOW_CREATED':   return handleNewWindowCreatedService.execute(event);
+        case 'WINDOW_SPEC_ASSIGNED': return handleWindowSpecAssignedService.execute(event);
+    }
+});
 
 // --- STARTUP ---
 
