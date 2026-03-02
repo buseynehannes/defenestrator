@@ -14,6 +14,10 @@ export interface NamedWindowSpecification {
     readonly name: WindowName;
     readonly theme?: Theme;
     readonly sticky: boolean;
+    /**
+     * The tab specifications for this window. Absent on default specifications.
+     */
+    readonly tabSpecifications?: readonly [TabSpecification, ...TabSpecification[]];
 
     /**
      * Check if a tab from outside should be accepted/moved into this window
@@ -46,6 +50,7 @@ export function createNamedWindowSpecification(
     return {
         name,
         sticky,
+        tabSpecifications,
         ...(theme !== undefined && {theme}),
 
         shouldAcceptTab(tab: Tab): boolean {

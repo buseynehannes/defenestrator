@@ -6,6 +6,8 @@
 import type { Tab } from "../Tab";
 
 export interface TabSpecification {
+    readonly urlPattern: string;
+
     /**
      * Check if a tab satisfies this specification
      * A tab satisfies the specification if its URL partially matches the pattern
@@ -15,6 +17,7 @@ export interface TabSpecification {
 
 export function createTabSpecification(urlPattern: string): TabSpecification {
     return {
+        urlPattern,
         isSatisfiedBy(tab: Tab): boolean {
             return tab.url.includes(urlPattern);
         }
