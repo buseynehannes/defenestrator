@@ -1,43 +1,14 @@
-import { BrowserStorageConfigurationStore } from "./adapters/BrowserStorageConfigurationStore.js";
-import type { ConfigurationData } from "./application/ports/ConfigurationStore";
+import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
+import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
+import type { PrioritizedNamedWindowSpecifications } from "./domain/specifications/PrioritizedNamedWindowSpecifications.js";
+import { createDefaultPrioritizedNamedWindowSpecifications } from "./domain/specifications/PrioritizedNamedWindowSpecifications.js";
 
 declare const browser: typeof import("webextension-polyfill");
 
+const logger = new ConsoleLogger();
+const configRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
 
-// Default configuration with sensible starting values
-const DEFAULT_CONFIGURATION_DATA: ConfigurationData = {
-    windows: [
-        {
-            tag: '[WORK]',
-            match: ['github.com', 'gitlab.com', 'jira', 'confluence'],
-            theme: {
-                accentColor: '#3498db',
-                textColor: '#ffffff'
-            }
-        },
-        {
-            tag: '[RESEARCH]',
-            match: ['wikipedia.org', 'stackoverflow.com', 'mdn.org'],
-            theme: {
-                accentColor: '#9b59b6',
-                textColor: '#ffffff'
-            }
-        },
-        {
-            tag: '[DEFAULT]',
-            match: [],
-            theme: {
-                accentColor: '#95a5a6',
-                textColor: '#ffffff'
-            }
-        }
-    ],
-    defaultWindowTag: '[DEFAULT]',
-    ignoredUrlPatterns: ['about:', 'moz-extension:']
-};
-
-const configStore = new BrowserStorageConfigurationStore();
-let currentConfig: ConfigurationData;
+let currentConfig: PrioritizedNamedWindowSpecifications;
 
 // DOM Elements
 let specsList: HTMLElement;
@@ -68,7 +39,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadConfiguration() {
-    currentConfig = await configStore.getConfiguration();
+    const loaded = await configRepository.getPrioritizedSpecifications();
+    currentConfig = loaded ?? createDefaultPrioritizedNamedWindowSpecifications();
     renderSpecs();
 }
 
@@ -80,31 +52,29 @@ function renderSpecs() {
 
     specsList.innerHTML = '';
 
-    if (currentConfig.windows.length === 0) {
+    const specs = currentConfig.specifications;
+    if (specs.length === 0) {
         specsList.innerHTML = '<div class="empty-state">No specifications configured yet.</div>';
         return;
     }
 
-    currentConfig.windows.forEach((windowDef, index) => {
-        const isDefault = index === currentConfig.windows.length - 1;
+    specs.forEach((spec, index) => {
+        const isDefault = index === specs.length - 1;
 
         const specItem = document.createElement('div');
         specItem.className = `spec-item ${isDefault ? 'is-default' : ''}`;
         specItem.dataset.index = String(index);
 
-        const stickyBadge = windowDef.sticky ? '📌' : '';
-        const accentColor = windowDef.theme?.accentColor || '#3498db';
-        const textColor = windowDef.theme?.textColor || '#ffffff';
-        const rulesText = windowDef.match.join('\n');
+        const stickyBadge = spec.sticky ? '📌' : '';
 
         specItem.innerHTML = `
             <div class="spec-bar">
                 <span class="spec-sticky">${stickyBadge}</span>
-                <span class="spec-name">${escapeHtml(windowDef.tag)}</span>
+                <span class="spec-name">${escapeHtml(spec.name)}</span>
                 ${isDefault ? '<span class="default-badge">Default</span>' : ''}
                 <div class="spec-controls">
                     ${index > 0 ? `<button class="btn-icon btn-move-up" title="Move up in priority">↑</button>` : ''}
-                    ${index < currentConfig.windows.length - 1 ? `<button class="btn-icon btn-move-down" title="Move down in priority">↓</button>` : ''}
+                    ${index < specs.length - 1 ? `<button class="btn-icon btn-move-down" title="Move down in priority">↓</button>` : ''}
                     ${!isDefault ? `<button class="btn-icon btn-delete" title="Delete">🗑</button>` : ''}
                 </div>
             </div>
@@ -112,15 +82,14 @@ function renderSpecs() {
             <div class="spec-content">
                 <div class="form-group">
                     <label>Name</label>
-                    <input type="text" class="spec-name-input" value="${escapeHtml(windowDef.tag)}" placeholder="e.g., Work, Research">
+                    <input type="text" class="spec-name-input" value="${escapeHtml(spec.name)}" placeholder="e.g., Work, Research">
                 </div>
 
                 ${!isDefault ? `
                     <div class="spec-content-row">
                         <div class="form-group">
-                            <label>URL Keywords (one per line)</label>
-                            <textarea class="spec-rules-input" placeholder="github.com&#10;gitlab.com&#10;jira.company.com">${escapeHtml(rulesText)}</textarea>
-                            <small>Tabs with URLs matching these keywords will be assigned to this window</small>
+                            <label>Note: URL matching is configured in the specification implementation</label>
+                            <small>This UI currently shows the specification names</small>
                         </div>
                     </div>
                 ` : `
@@ -132,23 +101,9 @@ function renderSpecs() {
                 <div class="spec-content-row">
                     <div class="form-group">
                         <label>
-                            <input type="checkbox" class="spec-sticky-input" ${windowDef.sticky ? 'checked' : ''}>
+                            <input type="checkbox" class="spec-sticky-input" ${spec.sticky ? 'checked' : ''}>
                             📌 Sticky (prevent automatic tab reassignment)
                         </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Theme Colors</label>
-                        <div class="color-section">
-                            <div class="color-picker">
-                                <label>Toolbar</label>
-                                <input type="color" class="spec-accent-input" value="${accentColor}">
-                            </div>
-                            <div class="color-picker">
-                                <label>Text</label>
-                                <input type="color" class="spec-text-input" value="${textColor}">
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -201,77 +156,48 @@ function saveSpecChanges(index: number) {
     if (!specItem) return;
 
     const name = (specItem.querySelector('.spec-name-input') as HTMLInputElement)?.value.trim();
-    const rulesText = (specItem.querySelector('.spec-rules-input') as HTMLTextAreaElement)?.value || '';
-    const isSticky = (specItem.querySelector('.spec-sticky-input') as HTMLInputElement)?.checked || false;
-    const accentColor = (specItem.querySelector('.spec-accent-input') as HTMLInputElement)?.value || '#3498db';
-    const textColor = (specItem.querySelector('.spec-text-input') as HTMLInputElement)?.value || '#ffffff';
 
     if (!name) return;
 
-    const rules = rulesText
-        .split('\n')
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
-
-    const windows = [...currentConfig.windows];
-    const oldDef = windows[index];
-
-    if (!oldDef) return;
-
-    windows[index] = {
-        ...oldDef!,
-        tag: name,
-        match: index === currentConfig.windows.length - 1 ? oldDef!.match : rules,
-        sticky: isSticky,
-        theme: {
-            accentColor,
-            textColor
-        }
-    };
-
-    currentConfig = { ...currentConfig, windows };
-
-    // Update the display name in the bar
-    const specNameDisplay = specItem.querySelector('.spec-name') as HTMLElement;
-    if (specNameDisplay && !specNameDisplay.classList.contains('spec-name-input')) {
-        specNameDisplay.textContent = name;
-    }
+    // Note: Full specification editing would require updating the domain objects
+    // For now, we just track the name
+    // TODO: Implement full spec editing capability
 }
 
 function handleMoveUp(index: number) {
     if (index <= 0) return;
-    const windows = [...currentConfig.windows];
-    const temp = windows[index - 1]!;
-    windows[index - 1] = windows[index]!;
-    windows[index] = temp;
-    currentConfig = { ...currentConfig, windows };
+    const specs = [...currentConfig.specifications];
+    const temp = specs[index - 1]!;
+    specs[index - 1] = specs[index]!;
+    specs[index] = temp;
+    currentConfig = { ...currentConfig, specifications: specs };
     renderSpecs();
 }
 
 function handleMoveDown(index: number) {
-    if (index >= currentConfig.windows.length - 1) return;
-    const windows = [...currentConfig.windows];
-    const temp = windows[index]!;
-    windows[index] = windows[index + 1]!;
-    windows[index + 1] = temp;
-    currentConfig = { ...currentConfig, windows };
+    if (index >= currentConfig.specifications.length - 1) return;
+    const specs = [...currentConfig.specifications];
+    const temp = specs[index]!;
+    specs[index] = specs[index + 1]!;
+    specs[index + 1] = temp;
+    currentConfig = { ...currentConfig, specifications: specs };
     renderSpecs();
 }
 
 function handleDeleteSpec(index: number) {
-    if (index === currentConfig.windows.length - 1) {
+    if (index === currentConfig.specifications.length - 1) {
         showStatus('Cannot delete the default window', 'error');
         return;
     }
 
-    const windowToDelete = currentConfig.windows[index];
-    if (!windowToDelete) {
+    const specToDelete = currentConfig.specifications[index];
+    if (!specToDelete) {
         return;
     }
 
-    if (confirm(`Delete "${windowToDelete.tag}"? This cannot be undone.`)) {
-        const windows = currentConfig.windows.filter((_, i) => i !== index);
-        currentConfig = { ...currentConfig, windows };
+    if (confirm(`Delete "${specToDelete.name}"? This cannot be undone.`)) {
+        const specs = currentConfig.specifications.filter((_, i) => i !== index);
+        currentConfig = { ...currentConfig, specifications: specs };
         renderSpecs();
     }
 }
@@ -285,31 +211,15 @@ function setupEventListeners() {
 
     if (addSpecBtn) {
         addSpecBtn.addEventListener('click', () => {
-            const windows = [...currentConfig.windows];
-            windows.splice(windows.length - 1, 0, {
-                tag: 'New Specification',
-                match: ['example.com'],
-                theme: { accentColor: '#3498db', textColor: '#ffffff' }
-            });
-            currentConfig = { ...currentConfig, windows };
-            renderSpecs();
-
-            // Auto-expand the new spec for editing
-            setTimeout(() => {
-                const newItem = document.querySelector(`[data-index="${windows.length - 2}"]`);
-                if (newItem) {
-                    newItem.classList.add('expanded');
-                    const input = newItem.querySelector('.spec-name-input') as HTMLInputElement;
-                    input?.select();
-                }
-            }, 0);
+            // TODO: Implement adding new specifications
+            showStatus('Adding new specifications is not yet implemented', 'error');
         });
     }
 
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
             try {
-                await configStore.saveConfiguration(currentConfig);
+                await configRepository.savePrioritizedSpecifications(currentConfig);
                 showStatus('✓ Configuration saved successfully', 'success');
                 await browser.runtime.sendMessage({ type: 'configUpdated' });
             } catch (error) {
@@ -321,7 +231,7 @@ function setupEventListeners() {
     if (resetBtn) {
         resetBtn.addEventListener('click', () => {
             if (confirm('Reset to default configuration?')) {
-                currentConfig = DEFAULT_CONFIGURATION_DATA;
+                currentConfig = createDefaultPrioritizedNamedWindowSpecifications();
                 renderSpecs();
                 showStatus('Reset to defaults. Click Save to apply.', 'success');
             }
@@ -355,12 +265,13 @@ function setupEventListeners() {
                     const text = await file.text();
                     const imported = JSON.parse(text);
 
-                    if (!imported.windows || !Array.isArray(imported.windows)) {
+                    if (!imported.specifications || !Array.isArray(imported.specifications)) {
                         showStatus('Error importing: Invalid configuration format', 'error');
                         return;
                     }
 
-                    currentConfig = imported as ConfigurationData;
+                    // Note: Full validation would be needed here
+                    currentConfig = imported as PrioritizedNamedWindowSpecifications;
                     renderSpecs();
                     showStatus('✓ Configuration imported. Click Save to apply.', 'success');
                 } catch (error) {

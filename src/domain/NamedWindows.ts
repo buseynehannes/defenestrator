@@ -1,66 +1,101 @@
 /**
  * NamedWindows aggregate root
- * Maps NamedWindowSpecifications to their Windows
- * Each specification maps to at most one window (or null if no window exists yet)
+ * Maps NamedWindowSpecifications to their WindowIds (UUIDs)
+ * Each specification maps to at most one WindowId (the stable identifier for that named window)
  *
- * This aggregate encapsulates the logic for managing windows across specifications
+ * This aggregate encapsulates the logic for managing window-to-specification assignments
  * and handles tab movement between windows.
+ * Tracks domain events internally for later processing.
  */
 
-import type { Window } from "./Window";
-import type { Tab } from "./Tab";
-import type { WindowId } from "./WindowName";
-import type { NamedWindowSpecification } from "./specifications/NamedWindowSpecification";
-import type { PrioritizedNamedWindowSpecifications } from "./specifications/PrioritizedNamedWindowSpecifications";
-import { createWindow } from "./Window";
+import type {Window} from "./Window";
+import type {Tab} from "./Tab";
+import type {WindowId} from "./WindowName";
+import {generateWindowId} from "./WindowName";
+import type {NamedWindowSpecification} from "./specifications/NamedWindowSpecification";
+import type {PrioritizedNamedWindowSpecifications} from "./specifications/PrioritizedNamedWindowSpecifications";
+import type {TabMovedEvent} from "./events/TabMovedEvent";
+import {createTabMovedEvent} from "./events/TabMovedEvent";
+import type {NewWindowCreatedEvent} from "./events/NewWindowCreatedEvent";
+import {createNewWindowCreatedEvent} from "./events/NewWindowCreatedEvent";
+import type {WindowSpecAssignedEvent} from "./events/WindowSpecAssignedEvent";
+import {createWindowSpecAssignedEvent} from "./events/WindowSpecAssignedEvent";
+
+type DomainEvent = TabMovedEvent | NewWindowCreatedEvent | WindowSpecAssignedEvent;
 
 export interface NamedWindows {
     /**
+     * Get all specifications in this aggregate
+     */
+    getSpecifications(): readonly NamedWindowSpecification[];
+
+    /**
+     * Get the WindowId for a given specification
+     * Returns null if no window is assigned to this specification
+     */
+    getWindowId(spec: NamedWindowSpecification): WindowId | null;
+
+    /**
+     * Check if a specification has an assigned window
+     */
+    hasWindow(spec: NamedWindowSpecification): boolean;
+
+    /**
+     * Get all domain events that have been raised in this aggregate
+     * Events are cleared when getAndClearEvents is called
+     */
+    getEvents(): readonly DomainEvent[];
+
+    /**
+     * Get all domain events and clear the event list
+     * Call this before persisting the aggregate to ensure events are handled
+     */
+    getAndClearEvents(): DomainEvent[];
+
+    /**
      * Update a tab's window assignment
-     * Checks if the tab should stay in its current window, or moves it to the first spec that accepts it
-     * Returns a new NamedWindows aggregate with the tab updated
+     * Note: This method updates the mapping but doesn't access the actual Window object
+     * Window mutations are handled by the caller using the WindowRepository
      *
      * @param tab The tab to update
-     * @param currentWindowId The window ID where the tab currently is
+     * @param currentWindowId The WindowId of the window where the tab currently is
      * @throws Error if no specification accepts the tab
      */
     updateTab(tab: Tab, currentWindowId: WindowId): NamedWindows;
 
     /**
      * Move a tab from one window to another
-     * Removes the tab from the source window and adds it to the target window
-     * Returns a new NamedWindows aggregate with the tab moved
+     * Emits a TabMovedEvent that can be retrieved with getEvents()
+     * If the target specification doesn't have a window, creates one and emits NewWindowCreatedEvent
      *
      * @param tab The tab to move
-     * @param fromSpec The specification of the window to remove the tab from
-     * @param toSpec The specification of the window to add the tab to
-     * @throws Error if the source window doesn't exist or doesn't contain the tab
+     * @param fromWindowId The WindowId of the source window
+     * @param targetSpec The target specification to move the tab to
+     * @returns The updated aggregate with the event(s) tracked internally
      */
-    moveTab(tab: Tab, fromSpec: NamedWindowSpecification, toSpec: NamedWindowSpecification): NamedWindows;
+    moveTab(tab: Tab, fromWindowId: WindowId, targetSpec: NamedWindowSpecification): NamedWindows;
 }
 
 export function createNamedWindows(
     prioritizedSpecs: PrioritizedNamedWindowSpecifications,
-    windows: ReadonlyMap<NamedWindowSpecification, Window | null> = new Map()
+    windowIds: ReadonlyMap<NamedWindowSpecification, WindowId | null> = new Map()
 ): NamedWindows {
     // Ensure all specifications are in the map
-    const windowMap = new Map(windows);
+    const windowIdMap = new Map(windowIds);
     for (const spec of prioritizedSpecs.specifications) {
-        if (!windowMap.has(spec)) {
-            windowMap.set(spec, null);
+        if (!windowIdMap.has(spec)) {
+            windowIdMap.set(spec, null);
         }
     }
 
     const specs = Array.from(prioritizedSpecs.specifications);
 
-    function removeTabFromWindow(tab: Tab, spec: NamedWindowSpecification, updatedMap: Map<NamedWindowSpecification, Window | null>): void {
-        const currentWindow = updatedMap.get(spec)!;
-        const updatedTabs = currentWindow.tabs.filter(t => t.id !== tab.id);
-
-        if (updatedTabs.length === 0) {
-            updatedMap.set(spec, null);
-        } else {
-            updatedMap.set(spec, createWindow(currentWindow.id, updatedTabs));
+    // Generate WindowSpecAssignedEvent for each assigned window
+    const pendingEvents: DomainEvent[] = [];
+    for (const spec of specs) {
+        const windowId = windowIdMap.get(spec);
+        if (windowId) {
+            pendingEvents.push(createWindowSpecAssignedEvent(windowId, spec));
         }
     }
 
@@ -75,29 +110,65 @@ export function createNamedWindows(
 
     function getSpecificationForWindowId(windowId: WindowId): NamedWindowSpecification | null {
         for (const spec of specs) {
-            const window = windowMap.get(spec)!;
-            if (window && window.id === windowId) {
+            const wId = windowIdMap.get(spec);
+            if (wId === windowId) {
                 return spec;
             }
         }
         return null;
     }
 
+    function moveWindowToSpecification(
+        fromSpec: NamedWindowSpecification | null,
+        toSpec: NamedWindowSpecification,
+        windowId: WindowId
+    ): Map<NamedWindowSpecification, WindowId | null> {
+        const newMap = new Map(windowIdMap);
+
+        // Remove from current specification if different
+        if (fromSpec && fromSpec !== toSpec) {
+            newMap.set(fromSpec, null);
+        }
+
+        // Add to target specification
+        if (!newMap.has(toSpec) || newMap.get(toSpec) === null) {
+            newMap.set(toSpec, windowId);
+        }
+
+        return newMap;
+    }
+
     return {
+        getSpecifications(): readonly NamedWindowSpecification[] {
+            return specs;
+        },
+
+        getWindowId(spec: NamedWindowSpecification): WindowId | null {
+            return windowIdMap.get(spec) ?? null;
+        },
+
+        hasWindow(spec: NamedWindowSpecification): boolean {
+            return windowIdMap.get(spec) !== null && windowIdMap.get(spec) !== undefined;
+        },
+
+        getEvents(): readonly DomainEvent[] {
+            return [...pendingEvents];
+        },
+
+        getAndClearEvents(): DomainEvent[] {
+            const events = [...pendingEvents];
+            pendingEvents.length = 0;
+            return events;
+        },
+
         updateTab(tab: Tab, currentWindowId: WindowId): NamedWindows {
             // Find the specification for the current window
             const currentSpec = getSpecificationForWindowId(currentWindowId);
 
             // Check if the tab should stay in the current window
-            if (currentSpec) {
-                const currentWindow = windowMap.get(currentSpec)!;
-                if (currentWindow && currentSpec.shouldKeepTab(tab)) {
-                    // Update the tab in the current window
-                    const updatedWindow = currentWindow.updateTab(tab);
-                    const newMap = new Map(windowMap);
-                    newMap.set(currentSpec, updatedWindow);
-                    return createNamedWindows(prioritizedSpecs, newMap);
-                }
+            if (currentSpec && currentSpec.shouldKeepTab(tab)) {
+                // Tab stays in current window - no mapping change needed
+                return createNamedWindows(prioritizedSpecs, windowIdMap);
             }
 
             // Find which specification should accept this tab
@@ -107,54 +178,60 @@ export function createNamedWindows(
                 throw new Error(`No specification accepts tab ${tab.id}`);
             }
 
-            // If moving to a different specification, remove from current first
-            let updatedMap = new Map(windowMap);
-            if (currentSpec && currentSpec !== targetSpec) {
-                removeTabFromWindow(tab, currentSpec, updatedMap);
-            }
-
-            // Add to target specification
-            const targetWindow = updatedMap.get(targetSpec)!;
-            if (targetWindow === null) {
-                updatedMap.set(targetSpec, createWindow(tab.id as any, [tab]));
-            } else {
-                updatedMap.set(targetSpec, createWindow(targetWindow.id, [...targetWindow.tabs, tab]));
-            }
-
-            return createNamedWindows(prioritizedSpecs, updatedMap);
-        },
-
-        moveTab(tab: Tab, fromSpec: NamedWindowSpecification, toSpec: NamedWindowSpecification): NamedWindows {
-            const sourceWindow = windowMap.get(fromSpec)!;
-            const targetWindow = windowMap.get(toSpec)!;
-
-            if (!sourceWindow) {
-                throw new Error(`No window exists for source specification ${fromSpec.name}`);
-            }
-
-            if (!targetWindow) {
-                throw new Error(`No window exists for target specification ${toSpec.name}`);
-            }
-
-            // Remove the tab from the source window
-            const updatedSourceWindow = sourceWindow.removeTab(tab);
-
-            // Add the tab to the target window
-            const updatedTargetWindow = targetWindow.updateTab(tab);
-
-            // Create a new map with both updated windows
-            const newMap = new Map(windowMap);
-
-            // If source window has no tabs left, set it to null
-            if (updatedSourceWindow.tabs.length === 0) {
-                newMap.set(fromSpec, null);
-            } else {
-                newMap.set(fromSpec, updatedSourceWindow);
-            }
-
-            newMap.set(toSpec, updatedTargetWindow);
+            // Move the window to the target specification
+            const newMap = moveWindowToSpecification(currentSpec || null, targetSpec, currentWindowId);
 
             return createNamedWindows(prioritizedSpecs, newMap);
+        },
+
+        moveTab(tab: Tab, fromWindowId: WindowId, targetSpec: NamedWindowSpecification): NamedWindows {
+            // Find the specification for the source window
+            const fromSpec = getSpecificationForWindowId(fromWindowId);
+
+            // Check that the target specification has a WindowId assigned
+            let targetWindowId = windowIdMap.get(targetSpec);
+
+            if (!targetWindowId) {
+                // Create a new WindowId for this specification if it doesn't have one
+                targetWindowId = generateWindowId();
+            }
+
+            // Update the mappings
+            const newMap = moveWindowToSpecification(fromSpec || null, targetSpec, targetWindowId);
+
+            // Create the new aggregate which will generate WindowSpecAssignedEvents automatically
+            const updatedAggregate = createNamedWindows(prioritizedSpecs, newMap);
+
+            // Now add the additional events that occurred during this operation
+            // Get the auto-generated events and add our custom ones
+            const generatedEvents = updatedAggregate.getEvents();
+            const allEvents: DomainEvent[] = [...generatedEvents];
+
+            if (!windowIdMap.get(targetSpec)) {
+                // A new window was created
+                allEvents.push(createNewWindowCreatedEvent(targetWindowId, tab, targetSpec));
+            }
+
+            // Always emit TabMovedEvent
+            allEvents.push(createTabMovedEvent(tab, fromWindowId, targetWindowId));
+
+            // Create a new aggregate and manually set its events
+            // We need to create a wrapper that preserves these events
+            const result = createNamedWindows(prioritizedSpecs, newMap);
+
+            // Override the events by creating a custom wrapper
+            return {
+                getSpecifications: () => result.getSpecifications(),
+                getWindowId: (spec) => result.getWindowId(spec),
+                hasWindow: (spec) => result.hasWindow(spec),
+                getEvents: () => allEvents,
+                getAndClearEvents: () => {
+                    const events = allEvents.splice(0);
+                    return events;
+                },
+                updateTab: (tab, windowId) => result.updateTab(tab, windowId),
+                moveTab: (tab, fromWindowId, targetSpec) => result.moveTab(tab, fromWindowId, targetSpec)
+            };
         }
     };
 }
@@ -162,6 +239,8 @@ export function createNamedWindows(
 /**
  * Factory method to create a NamedWindows aggregate by classifying windows against specifications
  * Each specification is matched to at most one window in priority order
+ * Assigns a WindowId (UUID) early to enable domain events
+ * Processes all tabs from unclassified windows to ensure they are assigned to specifications
  *
  * @param prioritizedSpecs The prioritized set of window specifications
  * @param windows The windows to classify
@@ -171,23 +250,29 @@ export function nameWindows(
     prioritizedSpecs: PrioritizedNamedWindowSpecifications,
     windows: readonly Window[]
 ): NamedWindows {
-    const windowMap = new Map<NamedWindowSpecification, Window | null>();
+    const windowIdMap = new Map<NamedWindowSpecification, WindowId | null>();
     const unclassifiedWindows = new Set(windows);
 
+    // Classify windows by specifications
     for (const spec of prioritizedSpecs.specifications) {
-        // Find the first unclassified window that satisfies this specification
-        let assignedWindow: Window | null = null;
-
         for (const window of unclassifiedWindows) {
             if (spec.isSatisfiedByWindow(window)) {
-                assignedWindow = window;
+                windowIdMap.set(spec, window.id);
                 unclassifiedWindows.delete(window);
                 break;
             }
         }
-
-        windowMap.set(spec, assignedWindow);
     }
 
-    return createNamedWindows(prioritizedSpecs, windowMap);
+    // Create the initial aggregate with classified windows
+    let namedWindows = createNamedWindows(prioritizedSpecs, windowIdMap);
+
+    // Process all tabs from unclassified windows
+    for (const window of unclassifiedWindows) {
+        for (const tab of window.tabs) {
+            namedWindows = namedWindows.updateTab(tab, window.id);
+        }
+    }
+
+    return namedWindows;
 }

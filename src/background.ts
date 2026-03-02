@@ -1,10 +1,8 @@
 import { FirefoxWindowRepository } from "./adapters/FirefoxWindowRepository.js";
 import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
-import { BrowserStorageNamedWindowsRepository } from "./adapters/BrowserStorageNamedWindowsRepository.js";
 import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
-import { TabUpdatedService } from "./application/services/TabUpdatedService.js";
-import { RestoreWindowTagsService } from "./application/services/RestoreWindowTagsService.js";
-import type { WindowId } from "./domain/WindowName";
+import { UpdateTabService } from "./application/services/UpdateTabService.js";
+import { RestoreNamedWindowsService } from "./application/services/RestoreNamedWindowsService.js";
 import { createTab, createTabId } from "./domain/Tab.js";
 
 declare const browser: typeof import("webextension-polyfill");
@@ -13,11 +11,11 @@ declare const browser: typeof import("webextension-polyfill");
 
 const logger = new ConsoleLogger();
 const windowRepository = new FirefoxWindowRepository(logger);
-const namedWindowsRepository = new BrowserStorageNamedWindowsRepository(logger);
+const prioritizedSpecsRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
 
 // These will be initialized from configuration
-let tabUpdatedService: TabUpdatedService;
-let restoreWindowTagsService: RestoreWindowTagsService;
+let updateTabService: UpdateTabService;
+let restoreNamedWindowsService: RestoreNamedWindowsService;
 
 // --- CONFIGURATION INITIALIZATION ---
 
@@ -25,12 +23,15 @@ async function initializeConfiguration() {
     try {
         logger.log('[CONFIG] Loading configuration...');
 
-        // Initialize TabUpdatedService with the configuration-based repository
-        const prioritizedSpecsRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
-        tabUpdatedService = new TabUpdatedService(namedWindowsRepository, prioritizedSpecsRepository, logger);
+        // Initialize UpdateTabService with repositories
+        updateTabService = new UpdateTabService(windowRepository, prioritizedSpecsRepository, logger);
 
-        // Initialize RestoreWindowTagsService with TabUpdatedService
-        restoreWindowTagsService = new RestoreWindowTagsService(windowRepository, namedWindowsRepository, tabUpdatedService, logger);
+        // Initialize RestoreNamedWindowsService with all dependencies
+        restoreNamedWindowsService = new RestoreNamedWindowsService(
+            windowRepository,
+            prioritizedSpecsRepository,
+            logger
+        );
 
         logger.log('[CONFIG] Configuration loaded successfully');
     } catch (e) {
@@ -44,17 +45,10 @@ async function initializeConfiguration() {
 async function startup() {
     await initializeConfiguration();
 
-    // Restore window tags after initialization
-    if (restoreWindowTagsService) {
+    // Restore named windows after initialization
+    if (restoreNamedWindowsService) {
         try {
-            const prioritizedSpecsRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
-            const prioritizedSpecs = await prioritizedSpecsRepository.getPrioritizedSpecifications();
-
-            if (prioritizedSpecs) {
-                await restoreWindowTagsService.execute(prioritizedSpecs);
-            } else {
-                logger.log('[STARTUP] No prioritized specifications available, skipping window restoration');
-            }
+            await restoreNamedWindowsService.execute();
         } catch (e) {
             logger.error('[STARTUP] Error during window restoration:', e);
         }
@@ -79,17 +73,35 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     }
 });
 
+// Handle tab updates - when URL changes
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url && tabUpdatedService && tab.windowId !== undefined) {
-        const browserTab = createTab(createTabId(tabId), changeInfo.url);
-        void tabUpdatedService.execute(browserTab, tab.windowId as WindowId);
+    if (changeInfo.url && updateTabService && tab.windowId !== undefined) {
+        const handleTabUpdate = async () => {
+            try {
+                const window = await windowRepository.getWindow(tab.windowId!);
+                const browserTab = createTab(createTabId(tabId), changeInfo.url!);
+                await updateTabService.execute(browserTab, window.id);
+            } catch (e) {
+                logger.error('[TAB] Error handling tab update:', e);
+            }
+        };
+        void handleTabUpdate();
     }
 });
 
+// Handle tab creation - new tabs
 browser.tabs.onCreated.addListener((tab) => {
-    if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && tab.windowId !== undefined && tabUpdatedService) {
-        const browserTab = createTab(createTabId(tab.id), tab.url);
-        void tabUpdatedService.execute(browserTab, tab.windowId as WindowId);
+    if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && tab.windowId !== undefined && updateTabService) {
+        const handleTabCreation = async () => {
+            try {
+                const window = await windowRepository.getWindow(tab.windowId!);
+                const browserTab = createTab(createTabId(tab.id!), tab.url!);
+                await updateTabService.execute(browserTab, window.id);
+            } catch (e) {
+                logger.error('[TAB] Error handling tab creation:', e);
+            }
+        };
+        void handleTabCreation();
     }
 });
 
