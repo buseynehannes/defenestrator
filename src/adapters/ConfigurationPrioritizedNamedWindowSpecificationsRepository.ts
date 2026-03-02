@@ -15,7 +15,8 @@ import {
     createDefaultNamedWindowSpecification
 } from "../domain/specifications/NamedWindowSpecification";
 import {createTabSpecification} from "../domain/specifications/TabSpecification";
-import {createIgnoredTabSpecification} from "../domain/specifications/IgnoredTabSpecification";
+import {createGlobalIgnoredUrls} from "../domain/specifications/GlobalIgnoredUrls";
+import {createPrioritizedNamedWindowSpecifications} from "../domain/specifications/PrioritizedNamedWindowSpecifications";
 
 declare const browser: typeof import("webextension-polyfill");
 
@@ -25,10 +26,10 @@ declare const browser: typeof import("webextension-polyfill");
 interface SerializedConfiguration {
     version: string;
     defaultWindowName: string;
+    ignoredUrls: string[]; // Global ignored URLs applied to all specs
     specifications: Array<{
         name: string;
         matchUrls: string[];
-        ignoredUrls: string[];
         accentColor?: string;
         textColor?: string;
         frameColor?: string;
@@ -83,17 +84,20 @@ export class ConfigurationPrioritizedNamedWindowSpecificationsRepository impleme
      * Serialize PrioritizedNamedWindowSpecifications to SerializedConfiguration
      */
     private serializeConfiguration(specs: PrioritizedNamedWindowSpecifications): SerializedConfiguration {
-        // The last specification should be the default one
         const defaultSpec = specs.specifications[specs.specifications.length - 1];
         const defaultWindowName = defaultSpec?.name ?? "[DEFAULT]";
 
         return {
             version: "1.0",
             defaultWindowName,
+            ignoredUrls: [...specs.globalIgnoredUrls.urlPatterns],
             specifications: specs.specifications.map(spec => ({
                 name: spec.name,
-                matchUrls: [],
-                ignoredUrls: [],
+                matchUrls: [] as string[],
+                ...(spec.theme?.accentColor !== undefined && {accentColor: spec.theme.accentColor}),
+                ...(spec.theme?.textColor !== undefined && {textColor: spec.theme.textColor}),
+                ...(spec.theme?.frameColor !== undefined && {frameColor: spec.theme.frameColor}),
+                ...(spec.theme?.tabBackgroundText !== undefined && {tabBackgroundText: spec.theme.tabBackgroundText}),
                 sticky: spec.sticky || false
             }))
         };
@@ -105,26 +109,27 @@ export class ConfigurationPrioritizedNamedWindowSpecificationsRepository impleme
     private deserializeConfiguration(serialized: SerializedConfiguration): PrioritizedNamedWindowSpecifications {
         const specifications: NamedWindowSpecification[] = [];
 
-        // Deserialize each specification
+        const globalIgnoredUrls = createGlobalIgnoredUrls(serialized.ignoredUrls || ['about:', 'moz-extension:']);
+
         for (const specData of serialized.specifications) {
             let spec: NamedWindowSpecification;
-
-            // Cast the name to WindowName type
             const windowName = specData.name as WindowName;
 
-            // Check if this is a default specification
             if (specData.name === serialized.defaultWindowName) {
-                spec = createDefaultNamedWindowSpecification(windowName);
+                spec = createDefaultNamedWindowSpecification(
+                    windowName,
+                    specData.accentColor || specData.textColor || specData.frameColor ? {
+                        ...(specData.accentColor && {accentColor: specData.accentColor}),
+                        ...(specData.textColor && {textColor: specData.textColor}),
+                        ...(specData.frameColor && {frameColor: specData.frameColor}),
+                        ...(specData.tabBackgroundText && {tabBackgroundText: specData.tabBackgroundText})
+                    } : undefined
+                );
             } else {
-                // Create tab specifications from match URLs
                 const tabSpecs = specData.matchUrls.length > 0
                     ? specData.matchUrls.map(url => createTabSpecification(url))
-                    : [createTabSpecification("")]; // Fallback to match-all pattern
+                    : [createTabSpecification("")];
 
-                // Create ignored specification
-                const ignoredSpec = createIgnoredTabSpecification(specData.ignoredUrls);
-
-                // Build the theme object only if there are theme properties
                 const theme = (specData.accentColor || specData.textColor || specData.frameColor || specData.tabBackgroundText)
                     ? {
                         ...(specData.accentColor && {accentColor: specData.accentColor}),
@@ -134,11 +139,9 @@ export class ConfigurationPrioritizedNamedWindowSpecificationsRepository impleme
                     }
                     : undefined;
 
-                // Create the full specification
                 spec = createNamedWindowSpecification(
                     windowName,
                     tabSpecs as unknown as readonly [any, ...any[]],
-                    ignoredSpec,
                     theme,
                     specData.sticky
                 );
@@ -147,9 +150,6 @@ export class ConfigurationPrioritizedNamedWindowSpecificationsRepository impleme
             specifications.push(spec);
         }
 
-        // Create and return the PrioritizedNamedWindowSpecifications
-        return {
-            specifications
-        };
+        return createPrioritizedNamedWindowSpecifications(specifications, globalIgnoredUrls);
     }
 }

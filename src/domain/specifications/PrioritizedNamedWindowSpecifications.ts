@@ -7,13 +7,29 @@
  */
 
 import {createNamedWindowSpecification, type NamedWindowSpecification} from "./NamedWindowSpecification";
-import { createDefaultNamedWindowSpecification } from "./NamedWindowSpecification";
-import { createIgnoredTabSpecification } from "./IgnoredTabSpecification";
-import type { WindowName } from "../WindowName";
+import {createDefaultNamedWindowSpecification} from "./NamedWindowSpecification";
+import {createGlobalIgnoredUrls, type GlobalIgnoredUrls} from "./GlobalIgnoredUrls";
+import type {WindowName} from "../WindowName";
 import {createTabSpecification} from "./TabSpecification";
 
 export interface PrioritizedNamedWindowSpecifications {
     readonly specifications: readonly NamedWindowSpecification[];
+    readonly globalIgnoredUrls: GlobalIgnoredUrls;
+}
+
+/**
+ * Factory method to create a PrioritizedNamedWindowSpecifications
+ * @param specifications Ordered list of named window specifications (earlier = higher priority)
+ * @param globalIgnoredUrls URL patterns that are globally ignored across all windows
+ */
+export function createPrioritizedNamedWindowSpecifications(
+    specifications: readonly NamedWindowSpecification[],
+    globalIgnoredUrls: GlobalIgnoredUrls
+): PrioritizedNamedWindowSpecifications {
+    return {
+        specifications,
+        globalIgnoredUrls
+    };
 }
 
 /**
@@ -21,6 +37,8 @@ export interface PrioritizedNamedWindowSpecifications {
  * with sensible default values
  */
 export function createDefaultPrioritizedNamedWindowSpecifications(): PrioritizedNamedWindowSpecifications {
+    const globalIgnoredUrls = createGlobalIgnoredUrls(['about:', 'moz-extension:']);
+
     // Create email specification with multiple email providers
     const emailTabSpecs = [
         createTabSpecification("mail.google.com"),
@@ -30,12 +48,9 @@ export function createDefaultPrioritizedNamedWindowSpecifications(): Prioritized
         createTabSpecification("protonmail.com"),
     ] as readonly [any, ...any[]];
 
-    const emailIgnoredUrls = createIgnoredTabSpecification(['about:', 'moz-extension:']);
-
     const emailSpec = createNamedWindowSpecification(
         "[EMAIL]" as WindowName,
         emailTabSpecs,
-        emailIgnoredUrls,
         {
             accentColor: "#4285f4",      // Google blue
             textColor: "#ffffff",
@@ -43,7 +58,6 @@ export function createDefaultPrioritizedNamedWindowSpecifications(): Prioritized
         }
     );
 
-    // Create default specification with ignored Mozilla internal URLs
     const defaultSpec = createDefaultNamedWindowSpecification(
         "[DEFAULT]" as WindowName,
         {
@@ -53,12 +67,8 @@ export function createDefaultPrioritizedNamedWindowSpecifications(): Prioritized
         }
     );
 
-    return {
-        specifications: [
-            emailSpec,
-            defaultSpec
-        ]
-    };
+    return createPrioritizedNamedWindowSpecifications(
+        [emailSpec, defaultSpec],
+        globalIgnoredUrls
+    );
 }
-
-

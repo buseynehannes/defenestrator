@@ -162,13 +162,18 @@ export function createNamedWindows(
         },
 
         updateTab(tab: Tab, currentWindowId: WindowId): NamedWindows {
+            // Ignore globally ignored tabs — leave them wherever they are
+            if (prioritizedSpecs.globalIgnoredUrls.isIgnored(tab)) {
+                return this;
+            }
+
             // Find the specification for the current window
             const currentSpec = getSpecificationForWindowId(currentWindowId);
 
             // Check if the tab should stay in the current window
             if (currentSpec && currentSpec.shouldKeepTab(tab)) {
                 // Tab stays in current window - no mapping change needed
-                return createNamedWindows(prioritizedSpecs, windowIdMap);
+                return this;
             }
 
             // Find which specification should accept this tab

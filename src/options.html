@@ -394,6 +394,20 @@
         </div>
 
         <div class="card">
+            <h2>🔒 Global Ignored URLs</h2>
+            <p style="color: #666; font-size: 13px; margin-bottom: 12px;">
+                URLs matching these patterns will be ignored across all window specifications and won't be automatically moved.
+            </p>
+            <div id="ignoredUrlsContainer">
+                <div class="form-group">
+                    <label>URL Patterns (one per line)</label>
+                    <textarea placeholder="about:&#10;moz-extension:&#10;localhost"></textarea>
+                    <small>Tabs with URLs containing these patterns will be ignored</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
             <h2>Settings</h2>
             <div class="action-buttons">
                 <button id="saveConfigBtn" class="btn btn-success">💾 Save</button>

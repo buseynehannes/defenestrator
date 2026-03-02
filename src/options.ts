@@ -2,6 +2,7 @@ import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./a
 import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
 import type { PrioritizedNamedWindowSpecifications } from "./domain/specifications/PrioritizedNamedWindowSpecifications.js";
 import { createDefaultPrioritizedNamedWindowSpecifications } from "./domain/specifications/PrioritizedNamedWindowSpecifications.js";
+import { createGlobalIgnoredUrls } from "./domain/specifications/GlobalIgnoredUrls.js";
 
 declare const browser: typeof import("webextension-polyfill");
 
@@ -42,6 +43,17 @@ async function loadConfiguration() {
     const loaded = await configRepository.getPrioritizedSpecifications();
     currentConfig = loaded ?? createDefaultPrioritizedNamedWindowSpecifications();
     renderSpecs();
+    renderIgnoredUrls();
+}
+
+function renderIgnoredUrls() {
+    const container = document.getElementById('ignoredUrlsContainer');
+    if (!container) return;
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+    if (textarea) {
+        textarea.value = currentConfig.globalIgnoredUrls.urlPatterns.join('\n');
+    }
 }
 
 function renderSpecs() {
@@ -219,6 +231,17 @@ function setupEventListeners() {
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
             try {
+                // Get ignored URLs from textarea and update currentConfig
+                const ignoredUrlsContainer = document.getElementById('ignoredUrlsContainer');
+                const ignoredUrlsTextarea = ignoredUrlsContainer?.querySelector('textarea') as HTMLTextAreaElement;
+                if (ignoredUrlsTextarea) {
+                    const urlPatterns = ignoredUrlsTextarea.value
+                        .split('\n')
+                        .map(url => url.trim())
+                        .filter(url => url.length > 0);
+                    currentConfig = { ...currentConfig, globalIgnoredUrls: createGlobalIgnoredUrls(urlPatterns) };
+                }
+
                 await configRepository.savePrioritizedSpecifications(currentConfig);
                 showStatus('✓ Configuration saved successfully', 'success');
                 await browser.runtime.sendMessage({ type: 'configUpdated' });
@@ -233,6 +256,7 @@ function setupEventListeners() {
             if (confirm('Reset to default configuration?')) {
                 currentConfig = createDefaultPrioritizedNamedWindowSpecifications();
                 renderSpecs();
+                renderIgnoredUrls();
                 showStatus('Reset to defaults. Click Save to apply.', 'success');
             }
         });
