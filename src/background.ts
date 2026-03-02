@@ -1,6 +1,7 @@
 import { FirefoxWindowRepository } from "./adapters/FirefoxWindowRepository.js";
 import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
 import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
+import { InMemoryNamedWindowsRepository } from "./adapters/InMemoryNamedWindowsRepository.js";
 import { UpdateTabService } from "./application/services/UpdateTabService.js";
 import { RestoreNamedWindowsService } from "./application/services/RestoreNamedWindowsService.js";
 import { createTab, createTabId } from "./domain/Tab.js";
@@ -12,46 +13,18 @@ declare const browser: typeof import("webextension-polyfill");
 const logger = new ConsoleLogger();
 const windowRepository = new FirefoxWindowRepository(logger);
 const prioritizedSpecsRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
+const namedWindowsRepository = new InMemoryNamedWindowsRepository(logger);
 
-// These will be initialized from configuration
-let updateTabService: UpdateTabService;
-let restoreNamedWindowsService: RestoreNamedWindowsService;
-
-// --- CONFIGURATION INITIALIZATION ---
-
-async function initializeConfiguration() {
-    try {
-        logger.log('[CONFIG] Loading configuration...');
-
-        // Initialize UpdateTabService with repositories
-        updateTabService = new UpdateTabService(windowRepository, prioritizedSpecsRepository, logger);
-
-        // Initialize RestoreNamedWindowsService with all dependencies
-        restoreNamedWindowsService = new RestoreNamedWindowsService(
-            windowRepository,
-            prioritizedSpecsRepository,
-            logger
-        );
-
-        logger.log('[CONFIG] Configuration loaded successfully');
-    } catch (e) {
-        logger.error('[CONFIG] Error loading configuration:', e);
-        throw e;
-    }
-}
+const updateTabService = new UpdateTabService(namedWindowsRepository, logger);
+const restoreNamedWindowsService = new RestoreNamedWindowsService(windowRepository, prioritizedSpecsRepository, namedWindowsRepository, logger);
 
 // --- STARTUP ---
 
 async function startup() {
-    await initializeConfiguration();
-
-    // Restore named windows after initialization
-    if (restoreNamedWindowsService) {
-        try {
-            await restoreNamedWindowsService.execute();
-        } catch (e) {
-            logger.error('[STARTUP] Error during window restoration:', e);
-        }
+    try {
+        await restoreNamedWindowsService.execute();
+    } catch (e) {
+        logger.error('[STARTUP] Error during window restoration:', e);
     }
 }
 
@@ -65,17 +38,17 @@ void startup();
 
 // --- BROWSER EVENT LISTENERS ---
 
-// Listen for configuration changes from the options page
+// Listen for configuration changes from the options page — reset the aggregate so next tab event re-bootstraps
 browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.defenestrator_config) {
-        logger.log('[CONFIG] Configuration changed, reloading...');
-        void initializeConfiguration();
+        logger.log('[CONFIG] Configuration changed, re-restoring windows...');
+        void startup();
     }
 });
 
 // Handle tab updates - when URL changes
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url && updateTabService && tab.windowId !== undefined) {
+    if (changeInfo.url && tab.windowId !== undefined) {
         const handleTabUpdate = async () => {
             try {
                 const window = await windowRepository.getWindow(tab.windowId!);
@@ -91,7 +64,7 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Handle tab creation - new tabs
 browser.tabs.onCreated.addListener((tab) => {
-    if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && tab.windowId !== undefined && updateTabService) {
+    if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && tab.windowId !== undefined) {
         const handleTabCreation = async () => {
             try {
                 const window = await windowRepository.getWindow(tab.windowId!);
