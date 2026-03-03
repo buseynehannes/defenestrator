@@ -47,7 +47,7 @@ export function createNamedWindowSpecification(
     theme?: Theme,
     sticky: boolean = false
 ): NamedWindowSpecification {
-    return {
+    return Object.freeze({
         name,
         sticky,
         tabSpecifications,
@@ -67,6 +67,6 @@ export function createNamedWindowSpecification(
                 || (sticky && window.tabs.some(tab => tabSpecifications.some(spec => spec.isSatisfiedBy(tab))))
             );
         }
-    };
+    });
 }
 

@@ -88,7 +88,8 @@ export interface NamedWindows {
 
 export function createNamedWindows(
     prioritizedSpecs: PrioritizedNamedWindowSpecifications,
-    windowIds: ReadonlyMap<NamedWindowSpecification, WindowId | null> = new Map()
+    windowIds: ReadonlyMap<NamedWindowSpecification, WindowId | null> = new Map(),
+    emitAssignedEvents: boolean = false
 ): NamedWindows {
     // Ensure all specifications are in the map
     const windowIdMap = new Map(windowIds);
@@ -100,12 +101,20 @@ export function createNamedWindows(
 
     const specs = Array.from(prioritizedSpecs.specifications);
 
-    // Generate WindowSpecAssignedEvent for each assigned window
-    const pendingEvents: DomainEvent[] = [];
+    console.log(`[NAMED_WINDOWS] createNamedWindows: ${specs.length} spec(s):`);
     for (const spec of specs) {
         const windowId = windowIdMap.get(spec);
-        if (windowId) {
-            pendingEvents.push(createWindowSpecAssignedEvent(windowId, spec));
+        console.log(`[NAMED_WINDOWS]   "${spec.name}" => ${windowId ?? 'unassigned'}`);
+    }
+
+    // Generate WindowSpecAssignedEvent for each assigned window only when requested
+    const pendingEvents: DomainEvent[] = [];
+    if (emitAssignedEvents) {
+        for (const spec of specs) {
+            const windowId = windowIdMap.get(spec);
+            if (windowId) {
+                pendingEvents.push(createWindowSpecAssignedEvent(windowId, spec));
+            }
         }
     }
 
@@ -129,17 +138,10 @@ export function createNamedWindows(
     }
 
     function moveWindowToSpecification(
-        fromSpec: NamedWindowSpecification | null,
         toSpec: NamedWindowSpecification,
         windowId: WindowId
     ): Map<NamedWindowSpecification, WindowId | null> {
         const newMap = new Map(windowIdMap);
-
-        // Remove from current specification if different
-        if (fromSpec && fromSpec !== toSpec) {
-            newMap.set(fromSpec, null);
-        }
-
         // Add to target specification
         if (!newMap.has(toSpec) || newMap.get(toSpec) === null) {
             newMap.set(toSpec, windowId);
@@ -203,7 +205,7 @@ export function createNamedWindows(
             }
 
             // Move the window to the target specification
-            const newMap = moveWindowToSpecification(currentSpec || null, targetSpec, currentWindowId);
+            const newMap = moveWindowToSpecification(targetSpec, currentWindowId);
 
             return createNamedWindows(prioritizedSpecs, newMap);
         },
@@ -216,14 +218,13 @@ export function createNamedWindows(
             let targetWindowId = windowIdMap.get(targetSpec);
 
             if (!targetWindowId) {
-                console.log(`[NAMED_WINDOWS] moveTab: no window for "${targetSpec.name}", creating new window`);
                 targetWindowId = generateWindowId();
             } else {
                 console.log(`[NAMED_WINDOWS] moveTab: target window already exists for "${targetSpec.name}" (${targetWindowId})`);
             }
 
             // Update the mappings
-            const newMap = moveWindowToSpecification(fromSpec || null, targetSpec, targetWindowId);
+            const newMap = moveWindowToSpecification(targetSpec, targetWindowId);
 
             // Create the new aggregate which will generate WindowSpecAssignedEvents automatically
             const updatedAggregate = createNamedWindows(prioritizedSpecs, newMap);
@@ -237,10 +238,10 @@ export function createNamedWindows(
                 // A new window was created
                 allEvents.push(createNewWindowCreatedEvent(targetWindowId, tab, targetSpec));
             }
-
-            // Always emit TabMovedEvent
-            allEvents.push(createTabMovedEvent(tab, fromWindowId, targetWindowId));
-
+            else {
+                // Move the tab if not in new window
+                allEvents.push(createTabMovedEvent(tab, fromWindowId, targetWindowId));
+            }
             // Create a new aggregate and manually set its events
             // We need to create a wrapper that preserves these events
             const result = createNamedWindows(prioritizedSpecs, newMap);
@@ -301,13 +302,13 @@ export function nameWindows(
         }
     }
 
-    // Create the initial aggregate with classified windows
-    let namedWindows = createNamedWindows(prioritizedSpecs, windowIdMap);
+    // Create the initial aggregate with classified windows, emitting WindowSpecAssignedEvents
+    let namedWindows = createNamedWindows(prioritizedSpecs, windowIdMap, true);
 
     // Process all tabs from unclassified windows
     for (const window of unclassifiedWindows) {
         for (const tab of window.tabs) {
-            namedWindows = namedWindows.updateTab(tab, window.id, { checkGlobalIgnoredUrls: false });
+            namedWindows = namedWindows.updateTab(tab, window.id, {checkGlobalIgnoredUrls: false});
         }
     }
 

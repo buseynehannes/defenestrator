@@ -11,7 +11,7 @@ export function createDefaultNamedWindowSpecification(
     defaultName: WindowName,
     theme?: Theme
 ): NamedWindowSpecification {
-    return {
+    return Object.freeze({
         name: defaultName,
         sticky: false,
         ...(theme !== undefined && {theme}),
@@ -21,12 +21,12 @@ export function createDefaultNamedWindowSpecification(
         },
 
         shouldAcceptTab(_tab: Tab): boolean {
-            return true
+            return true;
         },
 
         isSatisfiedByWindow(_window: Window): boolean {
             return true;
         }
-    };
+    });
 }
 
