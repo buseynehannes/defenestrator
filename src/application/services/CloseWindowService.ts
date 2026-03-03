@@ -18,7 +18,7 @@ export class CloseWindowService implements CloseWindowUseCase {
 
         this.logger.log(`[WINDOW] Window ${windowId} closed — clearing its assignment.`);
         const updated = namedWindows.clearWindow(windowId);
-        this.namedWindowsRepository.save(updated);
+        await this.namedWindowsRepository.save(updated);
     }
 }
 

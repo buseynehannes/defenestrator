@@ -21,6 +21,7 @@ export class HandleNewWindowCreatedService implements HandleNewWindowCreatedUseC
         }
 
         await this.windowRepository.setTitlePrefix(windowId, specification.name);
+        await this.windowRepository.focusWindow(windowId);
     }
 }
 

@@ -24,7 +24,7 @@ export class UpdateTabService implements UpdateTabUseCase {
             }
 
             const updatedNamedWindows = namedWindows.updateTab(tab, currentWindowId);
-            this.namedWindowsRepository.save(updatedNamedWindows);
+        await this.namedWindowsRepository.save(updatedNamedWindows);
 
             this.logger.log(`[TAB] Tab ${tab.id} processed`);
         } catch (e) {

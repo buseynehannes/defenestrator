@@ -15,6 +15,6 @@ export interface NamedWindowsRepository {
     /**
      * Save the NamedWindows aggregate and dispatch any pending domain events.
      */
-    save(namedWindows: NamedWindows): void;
+    save(namedWindows: NamedWindows): Promise<void>;
 }
 

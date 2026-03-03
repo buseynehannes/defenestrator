@@ -18,10 +18,11 @@ export class HandleTabMovedService implements HandleTabMovedUseCase {
         const isOnlyTab = fromWindow !== null && fromWindow.tabs.length === 1;
 
         await this.windowRepository.moveTab(tab, toWindowId);
-
         if (isOnlyTab) {
             await this.windowRepository.closeWindow(fromWindowId);
         }
+        await this.windowRepository.focusWindow(toWindowId);
+        this.logger.log(`[EVENT] Tab ${tab.id} moved and window ${toWindowId} focused`);
     }
 }
 

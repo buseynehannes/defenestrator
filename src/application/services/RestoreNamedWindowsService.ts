@@ -37,7 +37,7 @@ export class RestoreNamedWindowsService implements RestoreNamedWindowsUseCase {
             const namedWindows = nameWindows(prioritizedSpecs, windows);
 
             // Save the NamedWindows aggregate
-            this.namedWindowsRepository.save(namedWindows);
+            await this.namedWindowsRepository.save(namedWindows);
 
             this.logger.log('[STARTUP] Window restoration complete');
         } catch (e) {

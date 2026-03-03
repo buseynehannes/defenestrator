@@ -52,5 +52,10 @@ export interface WindowRepository {
      * Close a browser window
      */
     closeWindow(windowId: WindowId): Promise<void>;
+
+    /**
+     * Focus a browser window
+     */
+    focusWindow(windowId: WindowId): Promise<void>;
 }
 

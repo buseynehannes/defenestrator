@@ -57,10 +57,16 @@ export class FirefoxWindowRepository implements WindowRepository {
     }
 
     async openWindow(windowId: WindowId, tab: Tab): Promise<void> {
-        this.logger.log(`[WINDOW] Opening new window for domain ID ${windowId} with tab ${tab.url}`);
-        const newWindow = await browser.windows.create({ url: tab.url });
+        this.logger.log(`[WINDOW] Opening new window for domain ID ${windowId}, moving tab ${tab.id} into it`);
+        const newWindow = await browser.windows.create({});
         const firefoxId = newWindow.id as number;
         this.windowIdMap.set(firefoxId, windowId);
+        await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
+        // Close the blank tab Firefox opens automatically
+        const blankTabs = newWindow.tabs?.filter(t => t.url === 'about:blank') ?? [];
+        for (const blankTab of blankTabs) {
+            await browser.tabs.remove(blankTab.id as number);
+        }
     }
 
     async setTheme(windowId: WindowId, theme: Theme): Promise<void> {
@@ -106,6 +112,16 @@ export class FirefoxWindowRepository implements WindowRepository {
         }
         this.logger.log(`[WINDOW] Closing window ${windowId} (Firefox ID: ${firefoxId})`);
         await browser.windows.remove(firefoxId);
+    }
+
+    async focusWindow(windowId: WindowId): Promise<void> {
+        const firefoxId = this.getFirefoxId(windowId);
+        if (firefoxId === undefined) {
+            this.logger.error(`[WINDOW] Cannot focus window: unknown windowId ${windowId}`);
+            return;
+        }
+        this.logger.log(`[WINDOW] Focusing window ${windowId} (Firefox ID: ${firefoxId})`);
+        await browser.windows.update(firefoxId, { focused: true });
     }
 
     /**

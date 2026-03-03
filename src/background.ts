@@ -37,6 +37,12 @@ namedWindowsRepository.onEvent(event => {
 
 // --- STARTUP ---
 
+// Async mutex — ensures browser events are processed one at a time
+let processingChain = Promise.resolve();
+function enqueue(fn: () => Promise<void>): void {
+    processingChain = processingChain.then(fn).catch(() => {});
+}
+
 async function startup() {
     try {
         await restoreNamedWindowsService.execute();
@@ -47,11 +53,11 @@ async function startup() {
 
 // Run on extension startup (Firefox restart or extension reload)
 browser.runtime.onStartup.addListener(() => {
-    void startup();
+    enqueue(startup);
 });
 
 // Also run immediately when extension loads
-void startup();
+enqueue(startup);
 
 // --- BROWSER EVENT LISTENERS ---
 
@@ -59,14 +65,14 @@ void startup();
 browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.defenestrator_config) {
         logger.log('[CONFIG] Configuration changed, re-restoring windows...');
-        void startup();
+        enqueue(startup);
     }
 });
 
 // Handle tab updates - when URL changes
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.url && tab.windowId !== undefined) {
-        const handleTabUpdate = async () => {
+        enqueue(async () => {
             try {
                 const window = await windowRepository.getWindow(tab.windowId!);
                 const browserTab = createTab(createTabId(tabId), changeInfo.url!);
@@ -74,15 +80,14 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             } catch (e) {
                 logger.error('[TAB] Error handling tab update:', e);
             }
-        };
-        void handleTabUpdate();
+        });
     }
 });
 
 // Handle tab creation - new tabs
 browser.tabs.onCreated.addListener((tab) => {
     if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && tab.windowId !== undefined) {
-        const handleTabCreation = async () => {
+        enqueue(async () => {
             try {
                 const window = await windowRepository.getWindow(tab.windowId!);
                 const browserTab = createTab(createTabId(tab.id!), tab.url!);
@@ -90,8 +95,7 @@ browser.tabs.onCreated.addListener((tab) => {
             } catch (e) {
                 logger.error('[TAB] Error handling tab creation:', e);
             }
-        };
-        void handleTabCreation();
+        });
     }
 });
 
@@ -99,9 +103,9 @@ browser.tabs.onCreated.addListener((tab) => {
 browser.windows.onRemoved.addListener((firefoxWindowId) => {
     const windowId = windowRepository.resolveWindowId(firefoxWindowId);
     if (windowId) {
-        void closeWindowService.execute(windowId).catch(e => {
+        enqueue(() => closeWindowService.execute(windowId).catch(e => {
             logger.error('[WINDOW] Error handling window close:', e);
-        });
+        }));
     }
 });
 
