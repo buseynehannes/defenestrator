@@ -17,7 +17,7 @@ export function createDefaultNamedWindowSpecification(
         ...(theme !== undefined && {theme}),
 
         shouldKeepTab(_tab: Tab): boolean {
-            return true;
+            return false;
         },
 
         shouldAcceptTab(_tab: Tab): boolean {

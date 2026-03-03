@@ -7,7 +7,7 @@
  */
 
 import {createNamedWindowSpecification, type NamedWindowSpecification} from "./NamedWindowSpecification";
-import {createDefaultNamedWindowSpecification} from "./NamedWindowSpecification";
+import {createDefaultNamedWindowSpecification} from "./DefaultNamedWindowSpecification";
 import {createGlobalIgnoredUrls, type GlobalIgnoredUrls} from "./GlobalIgnoredUrls";
 import type {WindowName} from "../WindowName";
 import {createTabSpecification} from "./TabSpecification";

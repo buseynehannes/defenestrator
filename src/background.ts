@@ -7,6 +7,7 @@ import { RestoreNamedWindowsService } from "./application/services/RestoreNamedW
 import { HandleTabMovedService } from "./application/services/HandleTabMovedService.js";
 import { HandleNewWindowCreatedService } from "./application/services/HandleNewWindowCreatedService.js";
 import { HandleWindowSpecAssignedService } from "./application/services/HandleWindowSpecAssignedService.js";
+import { CloseWindowService } from "./application/services/CloseWindowService.js";
 import { createTab, createTabId } from "./domain/Tab.js";
 
 declare const browser: typeof import("webextension-polyfill");
@@ -21,9 +22,10 @@ const namedWindowsRepository = new InMemoryNamedWindowsRepository(logger);
 const updateTabService = new UpdateTabService(namedWindowsRepository, logger);
 const restoreNamedWindowsService = new RestoreNamedWindowsService(windowRepository, prioritizedSpecsRepository, namedWindowsRepository, logger);
 
-const handleTabMovedService = new HandleTabMovedService(logger);
-const handleNewWindowCreatedService = new HandleNewWindowCreatedService(logger);
-const handleWindowSpecAssignedService = new HandleWindowSpecAssignedService(logger);
+const handleTabMovedService = new HandleTabMovedService(windowRepository, logger);
+const handleNewWindowCreatedService = new HandleNewWindowCreatedService(windowRepository, logger);
+const handleWindowSpecAssignedService = new HandleWindowSpecAssignedService(windowRepository, logger);
+const closeWindowService = new CloseWindowService(namedWindowsRepository, logger);
 
 namedWindowsRepository.onEvent(event => {
     switch (event.type) {
@@ -90,6 +92,16 @@ browser.tabs.onCreated.addListener((tab) => {
             }
         };
         void handleTabCreation();
+    }
+});
+
+// Handle window closes — clear the assignment so the spec can be re-used
+browser.windows.onRemoved.addListener((firefoxWindowId) => {
+    const windowId = windowRepository.resolveWindowId(firefoxWindowId);
+    if (windowId) {
+        void closeWindowService.execute(windowId).catch(e => {
+            logger.error('[WINDOW] Error handling window close:', e);
+        });
     }
 });
 

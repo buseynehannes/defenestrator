@@ -70,29 +70,3 @@ export function createNamedWindowSpecification(
     };
 }
 
-/**
- * Create a default specification that matches any window or tab
- * Used as the fallback specification when no other specifications match
- */
-export function createDefaultNamedWindowSpecification(
-    defaultName: WindowName,
-    theme?: Theme
-): NamedWindowSpecification {
-    return {
-        name: defaultName,
-        sticky: false,
-        ...(theme !== undefined && {theme}),
-
-        shouldAcceptTab(_tab: Tab): boolean {
-            return true;
-        },
-
-        shouldKeepTab(_tab: Tab): boolean {
-            return true;
-        },
-
-        isSatisfiedByWindow(_window: Window): boolean {
-            return true;
-        }
-    };
-}

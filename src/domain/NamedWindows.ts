@@ -59,9 +59,10 @@ export interface NamedWindows {
      *
      * @param tab The tab to update
      * @param currentWindowId The WindowId of the window where the tab currently is
+     * @param options.checkGlobalIgnoredUrls Whether to skip tabs matched by globalIgnoredUrls (default: true)
      * @throws Error if no specification accepts the tab
      */
-    updateTab(tab: Tab, currentWindowId: WindowId): NamedWindows;
+    updateTab(tab: Tab, currentWindowId: WindowId, options?: { checkGlobalIgnoredUrls?: boolean }): NamedWindows;
 
     /**
      * Move a tab from one window to another
@@ -74,6 +75,15 @@ export interface NamedWindows {
      * @returns The updated aggregate with the event(s) tracked internally
      */
     moveTab(tab: Tab, fromWindowId: WindowId, targetSpec: NamedWindowSpecification): NamedWindows;
+
+    /**
+     * Clear the window assignment for the given WindowId (e.g. when the browser window is closed).
+     * If the windowId is not tracked, returns this unchanged.
+     *
+     * @param windowId The WindowId of the closed window
+     * @returns The updated aggregate with the assignment cleared
+     */
+    clearWindow(windowId: WindowId): NamedWindows;
 }
 
 export function createNamedWindows(
@@ -161,18 +171,22 @@ export function createNamedWindows(
             return events;
         },
 
-        updateTab(tab: Tab, currentWindowId: WindowId): NamedWindows {
+        updateTab(tab: Tab, currentWindowId: WindowId, options?: { checkGlobalIgnoredUrls?: boolean }): NamedWindows {
+            console.log(`[NAMED_WINDOWS] updateTab: tab=${tab.id} url=${tab.url} windowId=${currentWindowId}`);
+
             // Ignore globally ignored tabs — leave them wherever they are
-            if (prioritizedSpecs.globalIgnoredUrls.isIgnored(tab)) {
+            if ((options?.checkGlobalIgnoredUrls ?? true) && prioritizedSpecs.globalIgnoredUrls.isIgnored(tab)) {
+                console.log(`[NAMED_WINDOWS] updateTab: tab=${tab.id} is globally ignored, skipping`);
                 return this;
             }
 
             // Find the specification for the current window
             const currentSpec = getSpecificationForWindowId(currentWindowId);
+            console.log(`[NAMED_WINDOWS] updateTab: current spec="${currentSpec?.name ?? 'none'}"`);
 
             // Check if the tab should stay in the current window
             if (currentSpec && currentSpec.shouldKeepTab(tab)) {
-                // Tab stays in current window - no mapping change needed
+                console.log(`[NAMED_WINDOWS] updateTab: tab=${tab.id} kept in "${currentSpec.name}"`);
                 return this;
             }
 
@@ -183,6 +197,11 @@ export function createNamedWindows(
                 throw new Error(`No specification accepts tab ${tab.id}`);
             }
 
+            if (currentSpec !== targetSpec) {
+                console.log(`[NAMED_WINDOWS] updateTab: moving tab ${tab.id} from "${currentSpec?.name ?? 'none'}" to "${targetSpec.name}"`);
+                return this.moveTab(tab, currentWindowId, targetSpec);
+            }
+
             // Move the window to the target specification
             const newMap = moveWindowToSpecification(currentSpec || null, targetSpec, currentWindowId);
 
@@ -190,15 +209,17 @@ export function createNamedWindows(
         },
 
         moveTab(tab: Tab, fromWindowId: WindowId, targetSpec: NamedWindowSpecification): NamedWindows {
-            // Find the specification for the source window
             const fromSpec = getSpecificationForWindowId(fromWindowId);
+            console.log(`[NAMED_WINDOWS] moveTab: tab=${tab.id} url=${tab.url} from="${fromSpec?.name ?? 'none'}" to="${targetSpec.name}"`);
 
             // Check that the target specification has a WindowId assigned
             let targetWindowId = windowIdMap.get(targetSpec);
 
             if (!targetWindowId) {
-                // Create a new WindowId for this specification if it doesn't have one
+                console.log(`[NAMED_WINDOWS] moveTab: no window for "${targetSpec.name}", creating new window`);
                 targetWindowId = generateWindowId();
+            } else {
+                console.log(`[NAMED_WINDOWS] moveTab: target window already exists for "${targetSpec.name}" (${targetWindowId})`);
             }
 
             // Update the mappings
@@ -234,9 +255,20 @@ export function createNamedWindows(
                     const events = allEvents.splice(0);
                     return events;
                 },
-                updateTab: (tab, windowId) => result.updateTab(tab, windowId),
-                moveTab: (tab, fromWindowId, targetSpec) => result.moveTab(tab, fromWindowId, targetSpec)
+                updateTab: (tab, windowId, options) => result.updateTab(tab, windowId, options),
+                moveTab: (tab, fromWindowId, targetSpec) => result.moveTab(tab, fromWindowId, targetSpec),
+                clearWindow: (windowId) => result.clearWindow(windowId),
             };
+        },
+
+        clearWindow(windowId: WindowId): NamedWindows {
+            const spec = getSpecificationForWindowId(windowId);
+            if (!spec) {
+                return this;
+            }
+            const newMap = new Map(windowIdMap);
+            newMap.set(spec, null);
+            return createNamedWindows(prioritizedSpecs, newMap);
         }
     };
 }
@@ -275,7 +307,7 @@ export function nameWindows(
     // Process all tabs from unclassified windows
     for (const window of unclassifiedWindows) {
         for (const tab of window.tabs) {
-            namedWindows = namedWindows.updateTab(tab, window.id);
+            namedWindows = namedWindows.updateTab(tab, window.id, { checkGlobalIgnoredUrls: false });
         }
     }
 

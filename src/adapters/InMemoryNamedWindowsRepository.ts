@@ -20,12 +20,14 @@ export class InMemoryNamedWindowsRepository implements NamedWindowsRepository {
     constructor(private readonly logger: Logger) {}
 
     get(): NamedWindows | null {
+        this.logger.log(`[NAMED_WINDOWS] Getting aggregate — ${this.namedWindows ? 'initialized' : 'not yet initialized'}`);
         return this.namedWindows;
     }
 
     save(namedWindows: NamedWindows): void {
         const events = namedWindows.getAndClearEvents();
         this.namedWindows = namedWindows;
+        this.logger.log(`[NAMED_WINDOWS] Saved aggregate — ${namedWindows.getSpecifications().length} specification(s), ${events.length} event(s) to dispatch`);
 
         for (const event of events) {
             this.logger.log(`[NAMED_WINDOWS] Dispatching event: ${event.type}`);

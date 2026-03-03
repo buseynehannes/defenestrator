@@ -11,12 +11,12 @@ import type {NamedWindowSpecification} from "../domain/specifications/NamedWindo
 import type {WindowName} from "../domain/WindowName";
 import type {Logger} from "../application/ports/Logger";
 import {
-    createNamedWindowSpecification,
-    createDefaultNamedWindowSpecification
+    createNamedWindowSpecification
 } from "../domain/specifications/NamedWindowSpecification";
+import {createDefaultNamedWindowSpecification} from "../domain/specifications/DefaultNamedWindowSpecification";
 import {createTabSpecification} from "../domain/specifications/TabSpecification";
 import {createGlobalIgnoredUrls} from "../domain/specifications/GlobalIgnoredUrls";
-import {createPrioritizedNamedWindowSpecifications} from "../domain/specifications/PrioritizedNamedWindowSpecifications";
+import {createPrioritizedNamedWindowSpecifications, createDefaultPrioritizedNamedWindowSpecifications} from "../domain/specifications/PrioritizedNamedWindowSpecifications";
 
 declare const browser: typeof import("webextension-polyfill");
 
@@ -52,8 +52,8 @@ export class ConfigurationPrioritizedNamedWindowSpecificationsRepository impleme
             const serialized = result[this.storageKey] as SerializedConfiguration | undefined;
 
             if (!serialized) {
-                this.logger.log('[CONFIG] No configuration found in storage');
-                return null;
+                this.logger.log('[CONFIG] No configuration found in storage, using defaults');
+                return createDefaultPrioritizedNamedWindowSpecifications();
             }
 
             const deserialized = this.deserializeConfiguration(serialized);
