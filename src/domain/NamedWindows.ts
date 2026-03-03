@@ -89,7 +89,8 @@ export interface NamedWindows {
 export function createNamedWindows(
     prioritizedSpecs: PrioritizedNamedWindowSpecifications,
     windowIds: ReadonlyMap<NamedWindowSpecification, WindowId | null> = new Map(),
-    emitAssignedEvents: boolean = false
+    emitAssignedEvents: boolean = false,
+    additionalEvents: DomainEvent[] = []
 ): NamedWindows {
     // Ensure all specifications are in the map
     const windowIdMap = new Map(windowIds);
@@ -101,12 +102,6 @@ export function createNamedWindows(
 
     const specs = Array.from(prioritizedSpecs.specifications);
 
-    console.log(`[NAMED_WINDOWS] createNamedWindows: ${specs.length} spec(s):`);
-    for (const spec of specs) {
-        const windowId = windowIdMap.get(spec);
-        console.log(`[NAMED_WINDOWS]   "${spec.name}" => ${windowId ?? 'unassigned'}`);
-    }
-
     // Generate WindowSpecAssignedEvent for each assigned window only when requested
     const pendingEvents: DomainEvent[] = [];
     if (emitAssignedEvents) {
@@ -117,6 +112,7 @@ export function createNamedWindows(
             }
         }
     }
+    pendingEvents.push(...additionalEvents);
 
     function findSpecificationForTab(tab: Tab): NamedWindowSpecification | null {
         for (const spec of specs) {
@@ -174,21 +170,16 @@ export function createNamedWindows(
         },
 
         updateTab(tab: Tab, currentWindowId: WindowId, options?: { checkGlobalIgnoredUrls?: boolean }): NamedWindows {
-            console.log(`[NAMED_WINDOWS] updateTab: tab=${tab.id} url=${tab.url} windowId=${currentWindowId}`);
-
             // Ignore globally ignored tabs — leave them wherever they are
             if ((options?.checkGlobalIgnoredUrls ?? true) && prioritizedSpecs.globalIgnoredUrls.isIgnored(tab)) {
-                console.log(`[NAMED_WINDOWS] updateTab: tab=${tab.id} is globally ignored, skipping`);
                 return this;
             }
 
             // Find the specification for the current window
             const currentSpec = getSpecificationForWindowId(currentWindowId);
-            console.log(`[NAMED_WINDOWS] updateTab: current spec="${currentSpec?.name ?? 'none'}"`);
 
             // Check if the tab should stay in the current window
             if (currentSpec && currentSpec.shouldKeepTab(tab)) {
-                console.log(`[NAMED_WINDOWS] updateTab: tab=${tab.id} kept in "${currentSpec.name}"`);
                 return this;
             }
 
@@ -200,7 +191,6 @@ export function createNamedWindows(
             }
 
             if (currentSpec !== targetSpec) {
-                console.log(`[NAMED_WINDOWS] updateTab: moving tab ${tab.id} from "${currentSpec?.name ?? 'none'}" to "${targetSpec.name}"`);
                 return this.moveTab(tab, currentWindowId, targetSpec);
             }
 
@@ -211,55 +201,19 @@ export function createNamedWindows(
         },
 
         moveTab(tab: Tab, fromWindowId: WindowId, targetSpec: NamedWindowSpecification): NamedWindows {
-            const fromSpec = getSpecificationForWindowId(fromWindowId);
-            console.log(`[NAMED_WINDOWS] moveTab: tab=${tab.id} url=${tab.url} from="${fromSpec?.name ?? 'none'}" to="${targetSpec.name}"`);
-
-            // Check that the target specification has a WindowId assigned
             let targetWindowId = windowIdMap.get(targetSpec);
+            const isNewWindow = !targetWindowId;
 
             if (!targetWindowId) {
                 targetWindowId = generateWindowId();
-            } else {
-                console.log(`[NAMED_WINDOWS] moveTab: target window already exists for "${targetSpec.name}" (${targetWindowId})`);
             }
 
-            // Update the mappings
             const newMap = moveWindowToSpecification(targetSpec, targetWindowId);
+            const additionalEvents: DomainEvent[] = isNewWindow
+                ? [createNewWindowCreatedEvent(targetWindowId, tab, targetSpec)]
+                : [createTabMovedEvent(tab, fromWindowId, targetWindowId)];
 
-            // Create the new aggregate which will generate WindowSpecAssignedEvents automatically
-            const updatedAggregate = createNamedWindows(prioritizedSpecs, newMap);
-
-            // Now add the additional events that occurred during this operation
-            // Get the auto-generated events and add our custom ones
-            const generatedEvents = updatedAggregate.getEvents();
-            const allEvents: DomainEvent[] = [...generatedEvents];
-
-            if (!windowIdMap.get(targetSpec)) {
-                // A new window was created
-                allEvents.push(createNewWindowCreatedEvent(targetWindowId, tab, targetSpec));
-            }
-            else {
-                // Move the tab if not in new window
-                allEvents.push(createTabMovedEvent(tab, fromWindowId, targetWindowId));
-            }
-            // Create a new aggregate and manually set its events
-            // We need to create a wrapper that preserves these events
-            const result = createNamedWindows(prioritizedSpecs, newMap);
-
-            // Override the events by creating a custom wrapper
-            return {
-                getSpecifications: () => result.getSpecifications(),
-                getWindowId: (spec) => result.getWindowId(spec),
-                hasWindow: (spec) => result.hasWindow(spec),
-                getEvents: () => allEvents,
-                getAndClearEvents: () => {
-                    const events = allEvents.splice(0);
-                    return events;
-                },
-                updateTab: (tab, windowId, options) => result.updateTab(tab, windowId, options),
-                moveTab: (tab, fromWindowId, targetSpec) => result.moveTab(tab, fromWindowId, targetSpec),
-                clearWindow: (windowId) => result.clearWindow(windowId),
-            };
+            return createNamedWindows(prioritizedSpecs, newMap, false, additionalEvents);
         },
 
         clearWindow(windowId: WindowId): NamedWindows {

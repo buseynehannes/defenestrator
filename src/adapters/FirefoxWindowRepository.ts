@@ -61,11 +61,16 @@ export class FirefoxWindowRepository implements WindowRepository {
         const newWindow = await browser.windows.create({});
         const firefoxId = newWindow.id as number;
         this.windowIdMap.set(firefoxId, windowId);
-        await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
+        const movedTabs = await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
+        const movedTab = Array.isArray(movedTabs) ? movedTabs[0] : movedTabs;
         // Close the blank tab Firefox opens automatically
         const blankTabs = newWindow.tabs?.filter(t => t.url === 'about:blank') ?? [];
         for (const blankTab of blankTabs) {
             await browser.tabs.remove(blankTab.id as number);
+        }
+        if (movedTab?.id !== undefined) {
+            await browser.tabs.update(movedTab.id, { active: true });
+            await browser.windows.update(firefoxId, { focused: true });
         }
     }
 
@@ -102,6 +107,7 @@ export class FirefoxWindowRepository implements WindowRepository {
         }
         this.logger.log(`[TAB] Moving tab ${tab.id} to window ${toWindowId} (Firefox ID: ${firefoxId})`);
         await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
+        await browser.windows.update(firefoxId, { focused: true, drawAttention: true });
     }
 
     async closeWindow(windowId: WindowId): Promise<void> {
@@ -111,18 +117,14 @@ export class FirefoxWindowRepository implements WindowRepository {
             return;
         }
         this.logger.log(`[WINDOW] Closing window ${windowId} (Firefox ID: ${firefoxId})`);
-        await browser.windows.remove(firefoxId);
+        try {
+            await browser.windows.remove(firefoxId);
+        } catch (e) {
+            this.logger.log(`[WINDOW] Window ${windowId} (Firefox ID: ${firefoxId}) was already closed, ignoring`);
+        }
+        this.windowIdMap.delete(firefoxId);
     }
 
-    async focusWindow(windowId: WindowId): Promise<void> {
-        const firefoxId = this.getFirefoxId(windowId);
-        if (firefoxId === undefined) {
-            this.logger.error(`[WINDOW] Cannot focus window: unknown windowId ${windowId}`);
-            return;
-        }
-        this.logger.log(`[WINDOW] Focusing window ${windowId} (Firefox ID: ${firefoxId})`);
-        await browser.windows.update(firefoxId, { focused: true });
-    }
 
     /**
      * Resolve a Firefox numeric window ID to its cached domain WindowId.
