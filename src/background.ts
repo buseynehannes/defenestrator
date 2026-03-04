@@ -8,7 +8,7 @@ import { HandleTabMovedService } from "./application/services/HandleTabMovedServ
 import { HandleNewWindowCreatedService } from "./application/services/HandleNewWindowCreatedService.js";
 import { HandleWindowSpecAssignedService } from "./application/services/HandleWindowSpecAssignedService.js";
 import { CloseWindowService } from "./application/services/CloseWindowService.js";
-import { createTab, createTabId } from "./domain/Tab.js";
+import { createTab, createTabId } from "./domain/windows/Tab";
 
 declare const browser: typeof import("webextension-polyfill");
 

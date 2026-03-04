@@ -3,7 +3,7 @@
  * Represents a specification that tabs can satisfy based on URL pattern matching
  */
 
-import type { Tab } from "../Tab";
+import type { Tab } from "../windows/Tab";
 
 export interface TabSpecification {
     readonly urlPattern: string;

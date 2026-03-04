@@ -27,7 +27,6 @@ export class InMemoryNamedWindowsRepository implements NamedWindowsRepository {
     async save(namedWindows: NamedWindows): Promise<void> {
         const events = namedWindows.getAndClearEvents();
         this.namedWindows = namedWindows;
-        this.logger.log(`[NAMED_WINDOWS] Saved aggregate — ${namedWindows.getSpecifications().length} specification(s), ${events.length} event(s) to dispatch`);
 
         for (const event of events) {
             this.logger.log(`[NAMED_WINDOWS] Dispatching event: ${event.type}`);

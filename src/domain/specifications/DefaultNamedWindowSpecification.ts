@@ -1,6 +1,6 @@
 import type {WindowName} from "../WindowName";
-import type {Tab} from "../Tab";
-import type {Window} from "../Window";
+import type {Tab} from "../windows/Tab";
+import type {Window} from "../windows/Window";
 import type {NamedWindowSpecification, Theme} from "./NamedWindowSpecification";
 
 /**

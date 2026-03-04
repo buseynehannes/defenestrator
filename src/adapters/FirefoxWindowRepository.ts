@@ -1,11 +1,11 @@
 import type {WindowRepository} from "../application/ports/out/WindowRepository.js";
-import type {Tab, TabId} from "../domain/Tab.js";
-import { createTab } from "../domain/Tab.js";
+import type {Tab, TabId} from "../domain/windows/Tab";
+import { createTab } from "../domain/windows/Tab";
 import type {Logger} from "../application/ports/Logger.js";
 import type {WindowId} from "../domain/WindowName";
 import { generateWindowId } from "../domain/WindowName";
-import type { Window } from "../domain/Window.js";
-import { createWindow } from "../domain/Window.js";
+import type { Window } from "../domain/windows/Window";
+import { createWindow } from "../domain/windows/Window";
 import type { Theme } from "../domain/specifications/NamedWindowSpecification.js";
 
 declare const browser: typeof import("webextension-polyfill");
@@ -106,7 +106,11 @@ export class FirefoxWindowRepository implements WindowRepository {
             return;
         }
         this.logger.log(`[TAB] Moving tab ${tab.id} to window ${toWindowId} (Firefox ID: ${firefoxId})`);
-        await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
+        const movedTabs = await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
+        const movedTab = Array.isArray(movedTabs) ? movedTabs[0] : movedTabs;
+        if (movedTab?.id !== undefined) {
+            await browser.tabs.update(movedTab.id, { active: true });
+        }
         await browser.windows.update(firefoxId, { focused: true, drawAttention: true });
     }
 

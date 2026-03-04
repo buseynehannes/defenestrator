@@ -1,6 +1,6 @@
 import type { WindowId } from "../../../domain/WindowName";
-import type { Window } from "../../../domain/Window";
-import type { Tab } from "../../../domain/Tab";
+import type { Window } from "../../../domain/windows/Window";
+import type { Tab } from "../../../domain/windows/Tab";
 import type { Theme } from "../../../domain/specifications/NamedWindowSpecification";
 
 export interface BrowserWindow {

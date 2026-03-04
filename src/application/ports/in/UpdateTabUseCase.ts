@@ -3,7 +3,7 @@
  * Defines the contract for handling tab updates
  */
 
-import type { Tab } from "../../../domain/Tab";
+import type { Tab } from "../../../domain/windows/Tab";
 import type { WindowId } from "../../../domain/WindowName";
 
 export interface UpdateTabUseCase {

@@ -8,8 +8,8 @@
  * Tracks domain events internally for later processing.
  */
 
-import type {Window} from "./Window";
-import type {Tab} from "./Tab";
+import type {Window} from "./windows/Window";
+import type {Tab} from "./windows/Tab";
 import type {WindowId} from "./WindowName";
 import {generateWindowId} from "./WindowName";
 import type {NamedWindowSpecification} from "./specifications/NamedWindowSpecification";

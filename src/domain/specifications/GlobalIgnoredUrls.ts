@@ -4,7 +4,7 @@
  * Tabs matching any of these patterns will not be moved or reassigned.
  */
 
-import type {Tab} from "../Tab";
+import type {Tab} from "../windows/Tab";
 
 export interface GlobalIgnoredUrls {
     readonly urlPatterns: readonly string[];

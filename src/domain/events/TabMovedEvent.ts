@@ -3,7 +3,7 @@
  * Emitted when a tab is moved from one window to another
  */
 
-import type { Tab } from "../Tab";
+import type { Tab } from "../windows/Tab";
 import type { WindowId } from "../WindowName";
 
 export interface TabMovedEvent {

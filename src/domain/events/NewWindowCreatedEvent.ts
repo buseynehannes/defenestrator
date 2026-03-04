@@ -3,7 +3,7 @@
  * Emitted when a new window is created
  */
 
-import type { Tab } from "../Tab";
+import type { Tab } from "../windows/Tab";
 import type { WindowId } from "../WindowName";
 import type { NamedWindowSpecification } from "../specifications/NamedWindowSpecification";
 
