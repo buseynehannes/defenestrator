@@ -14,6 +14,7 @@ export function createDefaultNamedWindowSpecification(
     return Object.freeze({
         name: defaultName,
         sticky: false,
+        isDefault: true,
         ...(theme !== undefined && {theme}),
 
         shouldKeepTab(_tab: Tab): boolean {

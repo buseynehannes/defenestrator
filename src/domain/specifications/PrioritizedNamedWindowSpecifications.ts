@@ -26,10 +26,28 @@ export function createPrioritizedNamedWindowSpecifications(
     specifications: readonly NamedWindowSpecification[],
     globalIgnoredUrls: GlobalIgnoredUrls
 ): PrioritizedNamedWindowSpecifications {
-    return {
-        specifications,
-        globalIgnoredUrls
-    };
+    if (specifications.length < 2) {
+        throw new Error('PrioritizedNamedWindowSpecifications must have at least 2 specifications');
+    }
+
+    const last = specifications[specifications.length - 1]!;
+    if (!last.isDefault) {
+        throw new Error('The lowest-priority specification must be a default specification');
+    }
+
+    const nonLastDefaults = specifications.slice(0, -1).filter(s => s.isDefault);
+    if (nonLastDefaults.length > 0) {
+        throw new Error(`Only the lowest-priority specification can be a default. Found default specification(s) at higher priority: ${nonLastDefaults.map(s => s.name).join(', ')}`);
+    }
+
+    const names = specifications.map(s => s.name);
+    const uniqueNames = new Set(names);
+    if (uniqueNames.size !== names.length) {
+        const duplicates = names.filter((name, i) => names.indexOf(name) !== i);
+        throw new Error(`Duplicate window specification names: ${duplicates.join(', ')}`);
+    }
+
+    return { specifications, globalIgnoredUrls };
 }
 
 /**

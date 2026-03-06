@@ -14,6 +14,7 @@ export interface NamedWindowSpecification {
     readonly name: WindowName;
     readonly theme?: Theme;
     readonly sticky: boolean;
+    readonly isDefault: boolean;
     /**
      * The tab specifications for this window. Absent on default specifications.
      */
@@ -50,6 +51,7 @@ export function createNamedWindowSpecification(
     return Object.freeze({
         name,
         sticky,
+        isDefault: false,
         tabSpecifications,
         ...(theme !== undefined && {theme}),
 
@@ -63,7 +65,7 @@ export function createNamedWindowSpecification(
 
         isSatisfiedByWindow(window: Window): boolean {
             return (
-                window.tabs.every(tab => this.shouldKeepTab(tab))
+                window.tabs.every(tab => this.shouldAcceptTab(tab))
                 || (sticky && window.tabs.some(tab => tabSpecifications.some(spec => spec.isSatisfiedBy(tab))))
             );
         }
