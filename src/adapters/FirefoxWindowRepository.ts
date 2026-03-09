@@ -157,5 +157,10 @@ export class FirefoxWindowRepository implements WindowRepository {
         this.windowIdMap.delete(firefoxId);
         await this.persistMap();
     }
+
+    async resolveWindowId(firefoxWindowId: number): Promise<WindowId | null> {
+        await this.ensureMapLoaded();
+        return this.windowIdMap.get(firefoxWindowId) ?? null;
+    }
 }
 

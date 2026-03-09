@@ -80,11 +80,14 @@ enqueue(startup);
 
 // --- BROWSER EVENT LISTENERS ---
 
-// Listen for configuration changes from the options page — reset the aggregate so next tab event re-bootstraps
+// Listen for configuration changes from the options page — clear and re-restore windows
 browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.defenestrator_config) {
         logger.log('[CONFIG] Configuration changed, re-restoring windows...');
-        enqueue(startup);
+        enqueue(async () => {
+            await namedWindowsRepository.clear();
+            await startup();
+        });
     }
 });
 
@@ -137,12 +140,14 @@ browser.tabs.onAttached.addListener((tabId, attachInfo) => {
 
 // Handle window closes — clear the assignment so the spec can be re-used
 browser.windows.onRemoved.addListener((firefoxWindowId) => {
-    const windowId = windowRepository.resolveWindowId(firefoxWindowId);
-    if (windowId) {
-        enqueue(() => closeWindowService.execute(windowId).catch(e => {
-            logger.error('[WINDOW] Error handling window close:', e);
-        }));
-    }
+    enqueue(async () => {
+        const windowId = await windowRepository.resolveWindowId(firefoxWindowId);
+        if (windowId) {
+            await closeWindowService.execute(windowId).catch(e => {
+                logger.error('[WINDOW] Error handling window close:', e);
+            });
+        }
+    });
 });
 
 

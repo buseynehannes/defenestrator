@@ -24,6 +24,11 @@ export interface NamedWindowsRepository {
     save(namedWindows: NamedWindows): Promise<void>;
 
     /**
+     * Clear the persisted NamedWindows aggregate, forcing the next get() to return null.
+     */
+    clear(): Promise<void>;
+
+    /**
      * Register a handler to be called when domain events are dispatched on save.
      */
     onEvent(handler: NamedWindowsEventHandler): void;

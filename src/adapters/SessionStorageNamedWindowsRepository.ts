@@ -68,6 +68,11 @@ export class SessionStorageNamedWindowsRepository implements NamedWindowsReposit
         }
     }
 
+    async clear(): Promise<void> {
+        await browser.storage.session.remove(STORAGE_KEY);
+        this.logger.log('[NAMED_WINDOWS] Aggregate cleared');
+    }
+
     onEvent(handler: NamedWindowsEventHandler): void {
         this.handlers.push(handler);
     }

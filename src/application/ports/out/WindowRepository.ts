@@ -3,10 +3,6 @@ import type { Window } from "../../../domain/windows/Window";
 import type { Tab } from "../../../domain/windows/Tab";
 import type { Theme } from "../../../domain/specifications/NamedWindowSpecification";
 
-export interface BrowserWindow {
-    readonly id: WindowId;
-}
-
 /**
  * WindowRepository output port
  * Handles interactions with the actual Firefox windows
@@ -52,5 +48,11 @@ export interface WindowRepository {
      * Close a browser window
      */
     closeWindow(windowId: WindowId): Promise<void>;
+
+    /**
+     * Resolve a Firefox numeric window ID to its domain WindowId.
+     * Returns null if the window is not tracked.
+     */
+    resolveWindowId(firefoxWindowId: number): Promise<WindowId | null>;
 }
 

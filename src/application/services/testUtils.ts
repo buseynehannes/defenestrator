@@ -55,6 +55,7 @@ export function makeNamedWindowsRepository(namedWindows: NamedWindows | null = n
     return {
         get: vi.fn().mockResolvedValue(namedWindows),
         save: vi.fn().mockResolvedValue(undefined),
+        clear: vi.fn().mockResolvedValue(undefined),
         onEvent: vi.fn(),
     };
 }
@@ -69,8 +70,9 @@ export function makeWindowRepository(overrides: Partial<WindowRepository> = {}):
         setTitlePrefix: vi.fn().mockResolvedValue(undefined),
         moveTab: vi.fn().mockResolvedValue(undefined),
         closeWindow: vi.fn().mockResolvedValue(undefined),
+        resolveWindowId: vi.fn().mockResolvedValue(null),
         ...overrides,
-    };
+    } as WindowRepository;
 }
 
 export function makeSpecsRepository(
