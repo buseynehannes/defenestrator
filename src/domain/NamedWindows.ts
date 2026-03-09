@@ -94,6 +94,22 @@ export function createNamedWindows(
 ): NamedWindows {
     const specs = Array.from(prioritizedSpecs.specifications);
 
+    // Constraint 1: every WindowId in the map must resolve to a known specification
+    for (const [windowId, windowName] of windowIdMap) {
+        if (!prioritizedSpecs.getSpecificationByName(windowName)) {
+            throw new Error(`Window ${windowId} maps to unknown specification "${windowName}"`);
+        }
+    }
+
+    // Constraint 2: every specification has at most one window mapped to it
+    const seenNames = new Set<WindowName>();
+    for (const windowName of windowIdMap.values()) {
+        if (seenNames.has(windowName)) {
+            throw new Error(`Specification "${windowName}" is mapped to more than one window`);
+        }
+        seenNames.add(windowName);
+    }
+
     // Generate WindowSpecAssignedEvents for each assigned window only when requested
     const pendingEvents: DomainEvent[] = [];
     if (emitAssignedEvents) {
