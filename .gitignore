@@ -3,16 +3,14 @@ node_modules/
 
 # Build output
 dist/
-*.js
-*.js.map
-*.d.ts
-*.d.ts.map
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
 
 # Test coverage
 coverage/
 
-# Keep src JS files if they exist
-!src/**/*.js
 
 # IDE
 .idea/
