@@ -6,11 +6,8 @@
 
 import type { NamedWindows } from "../domain/NamedWindows";
 import { createNamedWindows } from "../domain/NamedWindows";
-import type { NamedWindowsRepository } from "../application/ports/out/NamedWindowsRepository";
+import type { NamedWindowsRepository, NamedWindowsEventHandler } from "../application/ports/out/NamedWindowsRepository";
 import type { PrioritizedNamedWindowSpecificationsRepository } from "../application/ports/out/PrioritizedNamedWindowSpecificationsRepository";
-import type { TabMovedEvent } from "../domain/events/TabMovedEvent";
-import type { NewWindowCreatedEvent } from "../domain/events/NewWindowCreatedEvent";
-import type { WindowSpecAssignedEvent } from "../domain/events/WindowSpecAssignedEvent";
 import type { Logger } from "../application/ports/Logger";
 import type { WindowId, WindowName } from "../domain/WindowName";
 
@@ -18,11 +15,8 @@ declare const browser: typeof import("webextension-polyfill");
 
 const STORAGE_KEY = "defenestrator_window_map";
 
-type DomainEvent = TabMovedEvent | NewWindowCreatedEvent | WindowSpecAssignedEvent;
-type EventHandler = (event: DomainEvent) => void | Promise<void>;
-
 export class SessionStorageNamedWindowsRepository implements NamedWindowsRepository {
-    private readonly handlers: EventHandler[] = [];
+    private readonly handlers: NamedWindowsEventHandler[] = [];
 
     constructor(
         private readonly specsRepository: PrioritizedNamedWindowSpecificationsRepository,
@@ -74,7 +68,7 @@ export class SessionStorageNamedWindowsRepository implements NamedWindowsReposit
         }
     }
 
-    onEvent(handler: EventHandler): void {
+    onEvent(handler: NamedWindowsEventHandler): void {
         this.handlers.push(handler);
     }
 }

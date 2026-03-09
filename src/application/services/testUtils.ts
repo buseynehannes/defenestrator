@@ -55,6 +55,7 @@ export function makeNamedWindowsRepository(namedWindows: NamedWindows | null = n
     return {
         get: vi.fn().mockResolvedValue(namedWindows),
         save: vi.fn().mockResolvedValue(undefined),
+        onEvent: vi.fn(),
     };
 }
 
