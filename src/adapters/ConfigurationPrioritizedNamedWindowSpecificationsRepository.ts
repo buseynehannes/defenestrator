@@ -118,7 +118,7 @@ export class ConfigurationPrioritizedNamedWindowSpecificationsRepository impleme
             if (specData.name === serialized.defaultWindowName) {
                 spec = createDefaultNamedWindowSpecification(
                     windowName,
-                    specData.accentColor || specData.textColor || specData.frameColor ? {
+                    (specData.accentColor || specData.textColor || specData.frameColor || specData.tabBackgroundText) ? {
                         ...(specData.accentColor && {accentColor: specData.accentColor}),
                         ...(specData.textColor && {textColor: specData.textColor}),
                         ...(specData.frameColor && {frameColor: specData.frameColor}),
