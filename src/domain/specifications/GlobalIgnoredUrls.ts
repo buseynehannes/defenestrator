@@ -20,11 +20,12 @@ export interface GlobalIgnoredUrls {
  * @param urlPatterns List of partial URL strings to ignore globally
  */
 export function createGlobalIgnoredUrls(urlPatterns: readonly string[]): GlobalIgnoredUrls {
-    return {
-        urlPatterns,
+    const frozenPatterns = Object.freeze([...urlPatterns]);
+    return Object.freeze({
+        urlPatterns: frozenPatterns,
         isIgnored(tab: Tab): boolean {
-            return urlPatterns.some(pattern => tab.url.includes(pattern));
+            return frozenPatterns.some(pattern => tab.url.includes(pattern));
         }
-    };
+    });
 }
 

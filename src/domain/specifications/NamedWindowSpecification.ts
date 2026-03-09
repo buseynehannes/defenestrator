@@ -48,15 +48,16 @@ export function createNamedWindowSpecification(
     theme?: Theme,
     sticky: boolean = false
 ): NamedWindowSpecification {
+    const frozenTabSpecs = Object.freeze([...tabSpecifications]) as readonly [TabSpecification, ...TabSpecification[]];
     return Object.freeze({
         name,
         sticky,
         isDefault: false,
-        tabSpecifications,
+        tabSpecifications: frozenTabSpecs,
         ...(theme !== undefined && {theme}),
 
         shouldAcceptTab(tab: Tab): boolean {
-            return tabSpecifications.some(spec => spec.isSatisfiedBy(tab));
+            return frozenTabSpecs.some(spec => spec.isSatisfiedBy(tab));
         },
 
         shouldKeepTab(tab: Tab): boolean {
@@ -66,7 +67,7 @@ export function createNamedWindowSpecification(
         isSatisfiedByWindow(window: Window): boolean {
             return (
                 window.tabs.every(tab => this.shouldAcceptTab(tab))
-                || (sticky && window.tabs.some(tab => tabSpecifications.some(spec => spec.isSatisfiedBy(tab))))
+                || (sticky && window.tabs.some(tab => frozenTabSpecs.some(spec => spec.isSatisfiedBy(tab))))
             );
         }
     });

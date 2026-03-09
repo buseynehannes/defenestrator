@@ -16,11 +16,11 @@ export interface TabSpecification {
 }
 
 export function createTabSpecification(urlPattern: string): TabSpecification {
-    return {
+    return Object.freeze({
         urlPattern,
         isSatisfiedBy(tab: Tab): boolean {
             return tab.url.includes(urlPattern);
         }
-    };
+    });
 }
 

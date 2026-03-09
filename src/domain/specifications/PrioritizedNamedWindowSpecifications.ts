@@ -47,7 +47,10 @@ export function createPrioritizedNamedWindowSpecifications(
         throw new Error(`Duplicate window specification names: ${duplicates.join(', ')}`);
     }
 
-    return { specifications, globalIgnoredUrls };
+    return Object.freeze({
+        specifications: Object.freeze([...specifications]) as readonly NamedWindowSpecification[],
+        globalIgnoredUrls
+    });
 }
 
 /**
