@@ -58,5 +58,5 @@ sign: build
 		--source-dir . \
 		--api-key "$(WEB_EXT_API_KEY)" \
 		--api-secret "$(WEB_EXT_API_SECRET)" \
-		--channel listed
+		--channel "$${WEB_EXT_CHANNEL:-unlisted}"
 
