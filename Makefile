@@ -51,3 +51,12 @@ watch: install
 ## verify: Verify project integrity (build + test + coverage)
 verify: clean install lint test coverage
 	@echo "✓ Project verification complete"
+
+## sign: Sign and publish the extension via web-ext (requires WEB_EXT_API_KEY and WEB_EXT_API_SECRET)
+sign: build
+	npx web-ext sign \
+		--source-dir . \
+		--api-key "$(WEB_EXT_API_KEY)" \
+		--api-secret "$(WEB_EXT_API_SECRET)" \
+		--channel listed
+
