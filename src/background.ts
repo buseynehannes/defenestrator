@@ -1,14 +1,16 @@
-import { FirefoxWindowRepository } from "./adapters/FirefoxWindowRepository.js";
-import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
-import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
-import { SessionStorageNamedWindowsRepository } from "./adapters/SessionStorageNamedWindowsRepository.js";
-import { UpdateTabService } from "./application/services/UpdateTabService.js";
-import { RestoreNamedWindowsService } from "./application/services/RestoreNamedWindowsService.js";
-import { HandleTabMovedService } from "./application/services/HandleTabMovedService.js";
-import { HandleNewWindowCreatedService } from "./application/services/HandleNewWindowCreatedService.js";
-import { HandleWindowSpecAssignedService } from "./application/services/HandleWindowSpecAssignedService.js";
-import { CloseWindowService } from "./application/services/CloseWindowService.js";
-import { createTab, createTabId } from "./domain/windows/Tab";
+import {FirefoxWindowRepository} from "./adapters/FirefoxWindowRepository.js";
+import {ConsoleLogger} from "./adapters/ConsoleLogger.js";
+import {
+    ConfigurationPrioritizedNamedWindowSpecificationsRepository
+} from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
+import {SessionStorageNamedWindowsRepository} from "./adapters/SessionStorageNamedWindowsRepository.js";
+import {UpdateTabService} from "./application/services/UpdateTabService.js";
+import {RestoreNamedWindowsService} from "./application/services/RestoreNamedWindowsService.js";
+import {HandleTabMovedService} from "./application/services/HandleTabMovedService.js";
+import {HandleNewWindowCreatedService} from "./application/services/HandleNewWindowCreatedService.js";
+import {HandleWindowSpecAssignedService} from "./application/services/HandleWindowSpecAssignedService.js";
+import {CloseWindowService} from "./application/services/CloseWindowService.js";
+import {createTab, createTabId} from "./domain/windows/Tab";
 
 declare const browser: typeof import("webextension-polyfill");
 
@@ -29,18 +31,35 @@ const closeWindowService = new CloseWindowService(namedWindowsRepository, logger
 
 namedWindowsRepository.onEvent(event => {
     switch (event.type) {
-        case 'TAB_MOVED':            return handleTabMovedService.execute(event);
-        case 'NEW_WINDOW_CREATED':   return handleNewWindowCreatedService.execute(event);
-        case 'WINDOW_SPEC_ASSIGNED': return handleWindowSpecAssignedService.execute(event);
+        case 'TAB_MOVED':
+            return handleTabMovedService.execute(event);
+        case 'NEW_WINDOW_CREATED':
+            return handleNewWindowCreatedService.execute(event);
+        case 'WINDOW_SPEC_ASSIGNED':
+            return handleWindowSpecAssignedService.execute(event);
     }
 });
 
 // --- STARTUP ---
 
+async function retry<T>(fn: () => Promise<T>, attempts = 4, delayMs = 50): Promise<T> {
+    for (let i = 0; i < attempts; i++) {
+        try {
+            return await fn();
+        } catch (e) {
+            if (i === attempts - 1) throw e;
+            await new Promise(resolve => setTimeout(resolve, delayMs * 2 ** i));
+        }
+    }
+    throw new Error('retry exhausted');
+}
+
 // Async mutex — ensures browser events are processed one at a time
 let processingChain = Promise.resolve();
+
 function enqueue(fn: () => Promise<void>): void {
-    processingChain = processingChain.then(fn).catch(() => {});
+    processingChain = processingChain.then(fn).catch(() => {
+    });
 }
 
 async function startup() {
@@ -99,6 +118,23 @@ browser.tabs.onCreated.addListener((tab) => {
     }
 });
 
+
+// Handle tab attached to a window (dragged into an existing window or out to a new one)
+browser.tabs.onAttached.addListener((tabId, attachInfo) => {
+    enqueue(async () => {
+        try {
+            // Retrying fetching the tab because sometimes this triggers too soon.
+            const tab = await retry(() => browser.tabs.get(tabId));
+            if (!tab.url || tab.url === "about:blank") return;
+            const window = await windowRepository.getWindow(attachInfo.newWindowId);
+            const browserTab = createTab(createTabId(tabId), tab.url);
+            await updateTabService.execute(browserTab, window.id);
+        } catch (e) {
+            logger.error('[TAB] Error handling tab attach:', e);
+        }
+    });
+});
+
 // Handle window closes — clear the assignment so the spec can be re-used
 browser.windows.onRemoved.addListener((firefoxWindowId) => {
     const windowId = windowRepository.resolveWindowId(firefoxWindowId);
@@ -108,4 +144,5 @@ browser.windows.onRemoved.addListener((firefoxWindowId) => {
         }));
     }
 });
+
 
