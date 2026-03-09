@@ -1,7 +1,7 @@
 import { FirefoxWindowRepository } from "./adapters/FirefoxWindowRepository.js";
 import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
 import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
-import { InMemoryNamedWindowsRepository } from "./adapters/InMemoryNamedWindowsRepository.js";
+import { SessionStorageNamedWindowsRepository } from "./adapters/SessionStorageNamedWindowsRepository.js";
 import { UpdateTabService } from "./application/services/UpdateTabService.js";
 import { RestoreNamedWindowsService } from "./application/services/RestoreNamedWindowsService.js";
 import { HandleTabMovedService } from "./application/services/HandleTabMovedService.js";
@@ -17,7 +17,7 @@ declare const browser: typeof import("webextension-polyfill");
 const logger = new ConsoleLogger();
 const windowRepository = new FirefoxWindowRepository(logger);
 const prioritizedSpecsRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
-const namedWindowsRepository = new InMemoryNamedWindowsRepository(logger);
+const namedWindowsRepository = new SessionStorageNamedWindowsRepository(prioritizedSpecsRepository, logger);
 
 const updateTabService = new UpdateTabService(namedWindowsRepository, logger);
 const restoreNamedWindowsService = new RestoreNamedWindowsService(windowRepository, prioritizedSpecsRepository, namedWindowsRepository, logger);

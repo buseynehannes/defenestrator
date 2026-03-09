@@ -10,7 +10,7 @@ export class CloseWindowService implements CloseWindowUseCase {
     ) {}
 
     async execute(windowId: WindowId): Promise<void> {
-        const namedWindows = this.namedWindowsRepository.get();
+        const namedWindows = await this.namedWindowsRepository.get();
         if (!namedWindows) {
             this.logger.log(`[WINDOW] Window ${windowId} closed but no NamedWindows aggregate exists, ignoring.`);
             return;

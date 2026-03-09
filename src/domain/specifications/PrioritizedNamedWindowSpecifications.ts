@@ -15,6 +15,12 @@ import {createTabSpecification} from "./TabSpecification";
 export interface PrioritizedNamedWindowSpecifications {
     readonly specifications: readonly NamedWindowSpecification[];
     readonly globalIgnoredUrls: GlobalIgnoredUrls;
+
+    /**
+     * Find a specification by its WindowName.
+     * Returns null if no specification with that name exists.
+     */
+    getSpecificationByName(name: WindowName): NamedWindowSpecification | null;
 }
 
 /**
@@ -47,9 +53,15 @@ export function createPrioritizedNamedWindowSpecifications(
         throw new Error(`Duplicate window specification names: ${duplicates.join(', ')}`);
     }
 
+    const frozenSpecs = Object.freeze([...specifications]) as readonly NamedWindowSpecification[];
+    const byName = new Map<WindowName, NamedWindowSpecification>(frozenSpecs.map(s => [s.name, s]));
+
     return Object.freeze({
-        specifications: Object.freeze([...specifications]) as readonly NamedWindowSpecification[],
-        globalIgnoredUrls
+        specifications: frozenSpecs,
+        globalIgnoredUrls,
+        getSpecificationByName(name: WindowName): NamedWindowSpecification | null {
+            return byName.get(name) ?? null;
+        }
     });
 }
 

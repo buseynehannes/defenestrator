@@ -10,7 +10,7 @@ export interface NamedWindowsRepository {
      * Get the current NamedWindows aggregate.
      * Returns null if not yet initialized.
      */
-    get(): NamedWindows | null;
+    get(): Promise<NamedWindows | null>;
 
     /**
      * Save the NamedWindows aggregate and dispatch any pending domain events.

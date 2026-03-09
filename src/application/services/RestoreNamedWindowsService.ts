@@ -22,6 +22,12 @@ export class RestoreNamedWindowsService implements RestoreNamedWindowsUseCase {
         try {
             this.logger.log('[STARTUP] Restoring window specifications...');
 
+            const existing = await this.namedWindowsRepository.get();
+            if (existing) {
+                this.logger.log('[STARTUP] NamedWindows already initialized, skipping restoration');
+                return;
+            }
+
             // Fetch the prioritized specifications from the repository
             const prioritizedSpecs = await this.prioritizedSpecsRepository.getPrioritizedSpecifications();
 

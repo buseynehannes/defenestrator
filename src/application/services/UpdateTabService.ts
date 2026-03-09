@@ -19,7 +19,7 @@ export class UpdateTabService implements UpdateTabUseCase {
     async execute(tab: Tab, currentWindowId: WindowId): Promise<void> {
         try {
             this.logger.log(`[TAB] Processing update for tab ${tab.id} (url ${tab.url}) in window ${currentWindowId}`);
-            const namedWindows = this.namedWindowsRepository.get();
+            const namedWindows = await this.namedWindowsRepository.get();
 
             if (!namedWindows) {
                 throw new Error('[TAB] NamedWindows not initialized — run RestoreNamedWindowsService first');
