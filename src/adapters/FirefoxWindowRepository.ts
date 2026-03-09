@@ -10,6 +10,8 @@ import type { Theme } from "../domain/specifications/NamedWindowSpecification.js
 
 declare const browser: typeof import("webextension-polyfill");
 
+const WINDOW_ID_MAP_KEY = "defenestrator_firefox_window_id_map";
+
 /**
  * Firefox adapter for WindowRepository
  * Handles actual Firefox window operations (create, focus, close, visual properties)
@@ -18,6 +20,7 @@ declare const browser: typeof import("webextension-polyfill");
 export class FirefoxWindowRepository implements WindowRepository {
     // Cache mapping Firefox numeric IDs to our UUID-based WindowIds
     private windowIdMap = new Map<number, WindowId>();
+    private mapLoaded = false;
 
     constructor(private readonly logger: Logger) {}
 
@@ -28,7 +31,28 @@ export class FirefoxWindowRepository implements WindowRepository {
         return undefined;
     }
 
+    private async ensureMapLoaded(): Promise<void> {
+        if (this.mapLoaded) return;
+        const result = await browser.storage.session.get(WINDOW_ID_MAP_KEY);
+        const raw = result[WINDOW_ID_MAP_KEY] as Record<string, string> | undefined;
+        if (raw) {
+            for (const [firefoxId, windowId] of Object.entries(raw)) {
+                this.windowIdMap.set(Number(firefoxId), windowId as WindowId);
+            }
+        }
+        this.mapLoaded = true;
+    }
+
+    private async persistMap(): Promise<void> {
+        const raw: Record<string, string> = {};
+        for (const [firefoxId, windowId] of this.windowIdMap) {
+            raw[String(firefoxId)] = windowId;
+        }
+        await browser.storage.session.set({ [WINDOW_ID_MAP_KEY]: raw });
+    }
+
     async getAllWindows(): Promise<Window[]> {
+        await this.ensureMapLoaded();
         const windows = await browser.windows.getAll({});
         return Promise.all(
             windows.map(window => this.getWindow(window.id as number))
@@ -36,10 +60,12 @@ export class FirefoxWindowRepository implements WindowRepository {
     }
 
     async getWindow(firefoxWindowId: number): Promise<Window> {
+        await this.ensureMapLoaded();
         let windowId = this.windowIdMap.get(firefoxWindowId);
         if (!windowId) {
             windowId = generateWindowId();
             this.windowIdMap.set(firefoxWindowId, windowId);
+            await this.persistMap();
         }
 
         this.logger.log(`[WINDOW] Fetching window ${windowId} (Firefox ID: ${firefoxWindowId}) with its tabs...`);
@@ -51,6 +77,7 @@ export class FirefoxWindowRepository implements WindowRepository {
     }
 
     async getWindowByDomainId(windowId: WindowId): Promise<Window | null> {
+        await this.ensureMapLoaded();
         const firefoxId = this.getFirefoxId(windowId);
         if (firefoxId === undefined) return null;
         return this.getWindow(firefoxId);
@@ -61,6 +88,7 @@ export class FirefoxWindowRepository implements WindowRepository {
         const newWindow = await browser.windows.create({});
         const firefoxId = newWindow.id as number;
         this.windowIdMap.set(firefoxId, windowId);
+        await this.persistMap();
         const movedTabs = await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
         const movedTab = Array.isArray(movedTabs) ? movedTabs[0] : movedTabs;
         // Close the blank tab Firefox opens automatically
@@ -127,18 +155,7 @@ export class FirefoxWindowRepository implements WindowRepository {
             this.logger.log(`[WINDOW] Window ${windowId} (Firefox ID: ${firefoxId}) was already closed, ignoring`);
         }
         this.windowIdMap.delete(firefoxId);
+        await this.persistMap();
     }
-
-
-    /**
-     * Resolve a Firefox numeric window ID to its cached domain WindowId.
-     * Returns null if the window was never seen (not yet tracked).
-     */
-    resolveWindowId(firefoxWindowId: number): WindowId | null {
-        return this.windowIdMap.get(firefoxWindowId) ?? null;
-    }
-
 }
-
-
 
