@@ -1,0 +1,44 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  publish:
+    name: Build, Test & Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build (includes type-checking)
+        run: make build
+
+      - name: Test
+        run: make test
+
+      - name: Sign extension
+        run: make sign
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+          WEB_EXT_CHANNEL: unlisted
+
+      - name: Read version from manifest
+        id: version
+        run: echo "version=$(node -p "require('./manifest.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          files: web-ext-artifacts/*.xpi

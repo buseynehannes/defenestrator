@@ -1,126 +1,153 @@
-import { TaggingRuleSet } from "./domain/TaggingRule.js";
-import { TabDispatcher } from "./domain/TabDispatcher.js";
-import { FirefoxWindowRepository } from "./adapters/FirefoxWindowRepository.js";
-import { FirefoxTabRepository } from "./adapters/FirefoxTabRepository.js";
-import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
-import { BrowserStorageConfigurationStore } from "./adapters/BrowserStorageConfigurationStore.js";
-import type { TabId } from "./domain/Tab.js";
-import type { WindowId } from "./domain/WindowTag.js";
+import {FirefoxWindowRepository} from "./adapters/FirefoxWindowRepository.js";
+import {ConsoleLogger} from "./adapters/ConsoleLogger.js";
+import {
+    ConfigurationPrioritizedNamedWindowSpecificationsRepository
+} from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
+import {SessionStorageNamedWindowsRepository} from "./adapters/SessionStorageNamedWindowsRepository.js";
+import {UpdateTabService} from "./application/services/UpdateTabService.js";
+import {RestoreNamedWindowsService} from "./application/services/RestoreNamedWindowsService.js";
+import {HandleTabMovedService} from "./application/services/HandleTabMovedService.js";
+import {HandleNewWindowCreatedService} from "./application/services/HandleNewWindowCreatedService.js";
+import {HandleWindowSpecAssignedService} from "./application/services/HandleWindowSpecAssignedService.js";
+import {CloseWindowService} from "./application/services/CloseWindowService.js";
+import {createTab, createTabId} from "./domain/windows/Tab";
 
 declare const browser: typeof import("webextension-polyfill");
 
 // --- DEPENDENCY INJECTION / SETUP ---
 
 const logger = new ConsoleLogger();
-const windowRepo = new FirefoxWindowRepository(logger);
-const tabRepo = new FirefoxTabRepository();
-const configStore = new BrowserStorageConfigurationStore();
+const windowRepository = new FirefoxWindowRepository(logger);
+const prioritizedSpecsRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
+const namedWindowsRepository = new SessionStorageNamedWindowsRepository(prioritizedSpecsRepository, logger);
 
-// These will be initialized from configuration
-let ruleSet: TaggingRuleSet;
-let dispatcher: TabDispatcher;
+const updateTabService = new UpdateTabService(namedWindowsRepository, logger);
+const restoreNamedWindowsService = new RestoreNamedWindowsService(windowRepository, prioritizedSpecsRepository, namedWindowsRepository, logger);
 
-// --- CONFIGURATION INITIALIZATION ---
+const handleTabMovedService = new HandleTabMovedService(windowRepository, logger);
+const handleNewWindowCreatedService = new HandleNewWindowCreatedService(windowRepository, logger);
+const handleWindowSpecAssignedService = new HandleWindowSpecAssignedService(windowRepository, logger);
+const closeWindowService = new CloseWindowService(namedWindowsRepository, logger);
 
-async function initializeConfiguration() {
-    try {
-        logger.log('[CONFIG] Loading configuration...');
-        const config = await configStore.getConfiguration();
-        ruleSet = new TaggingRuleSet(config.rules);
-        dispatcher = new TabDispatcher(ruleSet, windowRepo, tabRepo, logger);
-        logger.log('[CONFIG] Configuration loaded successfully');
-    } catch (e) {
-        logger.error('[CONFIG] Error loading configuration:', e);
-        throw e;
+namedWindowsRepository.onEvent(event => {
+    switch (event.type) {
+        case 'TAB_MOVED':
+            return handleTabMovedService.execute(event);
+        case 'NEW_WINDOW_CREATED':
+            return handleNewWindowCreatedService.execute(event);
+        case 'WINDOW_SPEC_ASSIGNED':
+            return handleWindowSpecAssignedService.execute(event);
     }
-}
+});
 
-// --- STARTUP: Restore window tags after restart ---
+// --- STARTUP ---
 
-async function restoreWindowTags() {
-    try {
-        logger.log('[STARTUP] Restoring window tags...');
-        const windows = await windowRepo.getAllWindows();
-
-        for (const window of windows) {
-            // Analyze the window's tabs and tag it based on content
-            const tabs = await tabRepo.getTabsInWindow(window.id);
-            if (tabs.length > 0) {
-                // Probabilistic detection: count which tags appear most in this window
-                const tagCounts = new Map<string, { count: number; rule: any }>();
-
-                for (const tab of tabs) {
-                    const rule = ruleSet.getRuleForUrl(tab.url);
-                    if (rule && rule.tag) {
-                        const current = tagCounts.get(rule.tag) || { count: 0, rule };
-                        tagCounts.set(rule.tag, { count: current.count + 1, rule });
-                    }
-                }
-
-                // Find the most common tag
-                let mostCommonTag: string | null = null;
-                let mostCommonRule: any = null;
-                let maxCount = 0;
-
-                for (const [tag, data] of tagCounts.entries()) {
-                    if (data.count > maxCount) {
-                        maxCount = data.count;
-                        mostCommonTag = tag;
-                        mostCommonRule = data.rule;
-                    }
-                }
-
-                if (mostCommonTag && mostCommonRule) {
-                    await windowRepo.setWindowTag(window.id, mostCommonTag, mostCommonRule.theme);
-                    const stickyNote = mostCommonRule.sticky ? ' (sticky)' : '';
-                    logger.log(`[STARTUP] Tagged window ${window.id} as ${mostCommonTag}${stickyNote} based on ${maxCount}/${tabs.length} tabs`);
-                }
-            }
+async function retry<T>(fn: () => Promise<T>, attempts = 4, delayMs = 50): Promise<T> {
+    for (let i = 0; i < attempts; i++) {
+        try {
+            return await fn();
+        } catch (e) {
+            if (i === attempts - 1) throw e;
+            await new Promise(resolve => setTimeout(resolve, delayMs * 2 ** i));
         }
-
-        logger.log('[STARTUP] Window tag restoration complete');
-    } catch (e) {
-        logger.error('[STARTUP] Error restoring window tags:', e);
     }
+    throw new Error('retry exhausted');
 }
 
-// Initialize configuration first, then restore tags
+// Async mutex — ensures browser events are processed one at a time
+let processingChain = Promise.resolve();
+
+function enqueue(fn: () => Promise<void>): void {
+    processingChain = processingChain.then(fn).catch(() => {
+    });
+}
+
 async function startup() {
-    await initializeConfiguration();
-    await restoreWindowTags();
+    try {
+        await restoreNamedWindowsService.execute();
+    } catch (e) {
+        logger.error('[STARTUP] Error during window restoration:', e);
+    }
 }
 
 // Run on extension startup (Firefox restart or extension reload)
 browser.runtime.onStartup.addListener(() => {
-    void startup();
+    enqueue(startup);
 });
 
 // Also run immediately when extension loads
-void startup();
+enqueue(startup);
 
 // --- BROWSER EVENT LISTENERS ---
 
-// Listen for configuration changes from the options page
+// Listen for configuration changes from the options page — clear and re-restore windows
 browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.defenestrator_config) {
-        logger.log('[CONFIG] Configuration changed, reloading...');
-        void initializeConfiguration();
+        logger.log('[CONFIG] Configuration changed, re-restoring windows...');
+        enqueue(async () => {
+            await namedWindowsRepository.clear();
+            await startup();
+        });
     }
 });
 
-browser.tabs.onUpdated.addListener((tabId, changeInfo, _tab) => {
-    if (changeInfo.url && dispatcher) {
-        void dispatcher.dispatch(tabId as TabId, changeInfo.url);
+// Handle tab updates - when URL changes
+browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url && tab.windowId !== undefined) {
+        enqueue(async () => {
+            try {
+                const window = await windowRepository.getWindow(tab.windowId!);
+                const browserTab = createTab(createTabId(tabId), changeInfo.url!);
+                await updateTabService.execute(browserTab, window.id);
+            } catch (e) {
+                logger.error('[TAB] Error handling tab update:', e);
+            }
+        });
     }
 });
 
+// Handle tab creation - new tabs
 browser.tabs.onCreated.addListener((tab) => {
-    if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && dispatcher) {
-        void dispatcher.dispatch(tab.id as TabId, tab.url);
+    if (tab.url && tab.url !== "about:blank" && tab.id !== undefined && tab.windowId !== undefined) {
+        enqueue(async () => {
+            try {
+                const window = await windowRepository.getWindow(tab.windowId!);
+                const browserTab = createTab(createTabId(tab.id!), tab.url!);
+                await updateTabService.execute(browserTab, window.id);
+            } catch (e) {
+                logger.error('[TAB] Error handling tab creation:', e);
+            }
+        });
     }
 });
 
-// CLEANUP: Remove tags when windows close
-browser.windows.onRemoved.addListener((windowId) => {
-    void windowRepo.removeWindowTag(windowId as WindowId);
+
+// Handle tab attached to a window (dragged into an existing window or out to a new one)
+browser.tabs.onAttached.addListener((tabId, attachInfo) => {
+    enqueue(async () => {
+        try {
+            // Retrying fetching the tab because sometimes this triggers too soon.
+            const tab = await retry(() => browser.tabs.get(tabId));
+            if (!tab.url || tab.url === "about:blank") return;
+            const window = await windowRepository.getWindow(attachInfo.newWindowId);
+            const browserTab = createTab(createTabId(tabId), tab.url);
+            await updateTabService.execute(browserTab, window.id);
+        } catch (e) {
+            logger.error('[TAB] Error handling tab attach:', e);
+        }
+    });
 });
+
+// Handle window closes — clear the assignment so the spec can be re-used
+browser.windows.onRemoved.addListener((firefoxWindowId) => {
+    enqueue(async () => {
+        const windowId = await windowRepository.resolveWindowId(firefoxWindowId);
+        if (windowId) {
+            await closeWindowService.execute(windowId).catch(e => {
+                logger.error('[WINDOW] Error handling window close:', e);
+            });
+        }
+    });
+});
+
+
