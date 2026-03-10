@@ -1,293 +1,299 @@
-import { BrowserStorageConfigurationStore } from "./adapters/BrowserStorageConfigurationStore.js";
-import { DEFAULT_CONFIGURATION } from "./domain/ConfigurationStore.js";
-import type { Configuration } from "./domain/ConfigurationStore.js";
+import { ConfigurationPrioritizedNamedWindowSpecificationsRepository } from "./adapters/ConfigurationPrioritizedNamedWindowSpecificationsRepository.js";
+import { ConsoleLogger } from "./adapters/ConsoleLogger.js";
+import type { PrioritizedNamedWindowSpecifications } from "./domain/specifications/PrioritizedNamedWindowSpecifications.js";
+import { createDefaultPrioritizedNamedWindowSpecifications } from "./domain/specifications/PrioritizedNamedWindowSpecifications.js";
+import { createGlobalIgnoredUrls } from "./domain/specifications/GlobalIgnoredUrls.js";
+import { createNamedWindowSpecification, type NamedWindowSpecification } from "./domain/specifications/NamedWindowSpecification.js";
+import { createTabSpecification } from "./domain/specifications/TabSpecification.js";
+import type { WindowName } from "./domain/WindowName.js";
 
 declare const browser: typeof import("webextension-polyfill");
 
-const configStore = new BrowserStorageConfigurationStore();
-let currentConfig: Configuration;
+const logger = new ConsoleLogger();
+const configRepository = new ConfigurationPrioritizedNamedWindowSpecificationsRepository(logger);
 
-// DOM Elements (will be initialized on DOMContentLoaded)
-let rulesContainer: HTMLElement;
-let patternsContainer: HTMLElement;
+let currentConfig: PrioritizedNamedWindowSpecifications;
+
+// DOM Elements
+let specsList: HTMLElement;
 let statusMessage: HTMLElement;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize DOM elements after DOM is ready
-    rulesContainer = document.getElementById('rulesContainer')!;
-    patternsContainer = document.getElementById('patternsContainer')!;
+    specsList = document.getElementById('specsList')!;
     statusMessage = document.getElementById('statusMessage')!;
 
-    await loadConfiguration();
-    setupEventListeners();
+    if (!specsList || !statusMessage) {
+        console.error('[OPTIONS] Required DOM elements not found');
+        return;
+    }
+
+    try {
+        await loadConfiguration();
+        setupEventListeners();
+    } catch (error) {
+        console.error('[OPTIONS] Initialization error:', error);
+        showStatus('Error loading configuration', 'error');
+    }
 });
 
 async function loadConfiguration() {
-    currentConfig = await configStore.getConfiguration();
-    renderRules();
-    renderPatterns();
+    const loaded = await configRepository.getPrioritizedSpecifications();
+    currentConfig = loaded ?? createDefaultPrioritizedNamedWindowSpecifications();
+    renderSpecs();
+    renderIgnoredUrls();
 }
 
-function renderRules() {
-    rulesContainer.innerHTML = '';
+function renderIgnoredUrls() {
+    const container = document.getElementById('ignoredUrlsContainer');
+    if (!container) return;
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+    if (textarea) {
+        textarea.value = currentConfig.globalIgnoredUrls.urlPatterns.join('\n');
+    }
+}
 
-    if (currentConfig.rules.length === 0) {
-        rulesContainer.innerHTML = '<div class="empty-state">No rules defined. Click "Add Rule" to create one.</div>';
+function renderSpecs() {
+    if (!specsList) return;
+
+    specsList.innerHTML = '';
+
+    const specs = currentConfig.specifications;
+    if (specs.length === 0) {
+        specsList.innerHTML = '<div class="empty-state">No specifications configured yet.</div>';
         return;
     }
 
-    currentConfig.rules.forEach((rule, index) => {
-        const ruleDiv = document.createElement('div');
-        ruleDiv.className = 'rule-item';
+    specs.forEach((spec, index) => {
+        const isDefault = index === specs.length - 1;
+        const matchUrls = spec.tabSpecifications?.map(s => s.urlPattern).join('\n') ?? '';
 
-        const theme = rule.theme || {};
-        const accentColor = theme.accentColor || '#3498db';
-        const textColor = theme.textColor || '#ffffff';
-        const frameColor = theme.frameColor || '';
-        const tabBgText = theme.tabBackgroundText || '';
-        const isSticky = rule.sticky === true;
+        const specItem = document.createElement('div');
+        specItem.className = `spec-item ${isDefault ? 'is-default' : ''}`;
+        specItem.dataset.index = String(index);
 
-        ruleDiv.innerHTML = `
-            <div class="form-group">
-                <label>Tag Name (e.g., [DEV], [WORK], [PERSONAL])</label>
-                <input type="text" class="rule-tag" data-index="${index}" value="${escapeHtml(rule.tag)}">
+        specItem.innerHTML = `
+            <div class="spec-bar">
+                <span class="spec-sticky">${spec.sticky ? '📌' : ''}</span>
+                <span class="spec-name">${escapeHtml(spec.name)}</span>
+                ${isDefault ? '<span class="default-badge">Default</span>' : ''}
+                <div class="spec-controls">
+                    ${index > 0 ? `<button class="btn-icon btn-move-up" title="Move up in priority">↑</button>` : ''}
+                    ${index < specs.length - 1 ? `<button class="btn-icon btn-move-down" title="Move down in priority">↓</button>` : ''}
+                    ${!isDefault ? `<button class="btn-icon btn-delete" title="Delete">🗑</button>` : ''}
+                </div>
             </div>
-            <div class="form-group">
-                <label>Match Keywords (one per line)</label>
-                <textarea class="rule-match" data-index="${index}" rows="3">${escapeHtml(rule.match.join('\n'))}</textarea>
-            </div>
-            <div class="form-group">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" class="rule-sticky" data-index="${index}" ${isSticky ? 'checked' : ''}>
-                    <span>📌 Sticky Window (prevent tabs from being auto-moved)</span>
-                </label>
-            </div>
-            <div class="theme-section">
-                <h4>🎨 Window Theme</h4>
-                <div class="theme-colors">
-                    <div class="color-picker-group">
-                        <label>Toolbar Color</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" class="theme-accent" data-index="${index}" value="${accentColor}">
-                            <span class="color-value">${accentColor}</span>
+            <div class="spec-content">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" class="spec-name-input" value="${escapeHtml(spec.name)}" placeholder="e.g., Work, Research">
+                </div>
+                ${!isDefault ? `
+                <div class="form-group">
+                    <label>Match URLs (one per line)</label>
+                    <textarea class="spec-urls-input" placeholder="mail.google.com&#10;outlook.com">${escapeHtml(matchUrls)}</textarea>
+                    <small>Tabs whose URL contains any of these patterns will be assigned to this window.</small>
+                </div>
+                ` : `
+                <div class="info-box">
+                    This is the default window. Tabs that don't match any other specification will go here.
+                </div>
+                `}
+                <div class="form-group">
+                    <label>Theme Colors</label>
+                    <div class="color-section">
+                        <div class="color-picker">
+                            <label>Accent</label>
+                            <input type="color" class="spec-accent-color" value="${spec.theme?.accentColor ?? '#667eea'}">
                         </div>
-                    </div>
-                    <div class="color-picker-group">
-                        <label>Text Color</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" class="theme-text" data-index="${index}" value="${textColor}">
-                            <span class="color-value">${textColor}</span>
+                        <div class="color-picker">
+                            <label>Text</label>
+                            <input type="color" class="spec-text-color" value="${spec.theme?.textColor ?? '#ffffff'}">
                         </div>
-                    </div>
-                    <div class="color-picker-group">
-                        <label>Frame Color (optional)</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" class="theme-frame" data-index="${index}" value="${frameColor || '#333333'}">
-                            <span class="color-value">${frameColor || 'none'}</span>
+                        <div class="color-picker">
+                            <label>Frame</label>
+                            <input type="color" class="spec-frame-color" value="${spec.theme?.frameColor ?? '#4a5568'}">
                         </div>
-                    </div>
-                    <div class="color-picker-group">
-                        <label>Tab Text (optional)</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" class="theme-tab-text" data-index="${index}" value="${tabBgText || '#000000'}">
-                            <span class="color-value">${tabBgText || 'none'}</span>
+                        <div class="color-picker">
+                            <label>Tab text</label>
+                            <input type="color" class="spec-tab-bg-text" value="${spec.theme?.tabBackgroundText ?? '#333333'}">
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="button-group">
-                <button class="btn-danger btn-remove-rule" data-index="${index}">Remove Rule</button>
-            </div>
-        `;
-        rulesContainer.appendChild(ruleDiv);
-    });
-
-    // Add event listeners
-    document.querySelectorAll('.rule-tag').forEach(input => {
-        input.addEventListener('input', handleRuleChange);
-    });
-    document.querySelectorAll('.rule-match').forEach(textarea => {
-        textarea.addEventListener('input', handleRuleChange);
-    });
-    document.querySelectorAll('.rule-sticky').forEach(checkbox => {
-        checkbox.addEventListener('change', handleStickyChange);
-    });
-    document.querySelectorAll('.theme-accent, .theme-text, .theme-frame, .theme-tab-text').forEach(input => {
-        input.addEventListener('input', handleThemeChange);
-    });
-    document.querySelectorAll('.btn-remove-rule').forEach(btn => {
-        btn.addEventListener('click', handleRemoveRule);
-    });
-}
-
-function renderPatterns() {
-    patternsContainer.innerHTML = '';
-
-    if (currentConfig.ignoredUrlPatterns.length === 0) {
-        patternsContainer.innerHTML = '<div class="empty-state">No ignored patterns defined.</div>';
-        return;
-    }
-
-    currentConfig.ignoredUrlPatterns.forEach((pattern, index) => {
-        const patternDiv = document.createElement('div');
-        patternDiv.className = 'pattern-item';
-        patternDiv.innerHTML = `
-            <div class="form-group">
-                <label>URL Pattern Prefix</label>
-                <input type="text" class="pattern-value" data-index="${index}" value="${escapeHtml(pattern)}">
-            </div>
-            <div class="button-group">
-                <button class="btn-danger btn-remove-pattern" data-index="${index}">Remove Pattern</button>
+                <div class="spec-content-row">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" class="spec-sticky-input" ${spec.sticky ? 'checked' : ''}>
+                            📌 Sticky (prevent automatic tab reassignment)
+                        </label>
+                    </div>
+                </div>
             </div>
         `;
-        patternsContainer.appendChild(patternDiv);
-    });
 
-    // Add event listeners
-    document.querySelectorAll('.pattern-value').forEach(input => {
-        input.addEventListener('input', handlePatternChange);
-    });
-    document.querySelectorAll('.btn-remove-pattern').forEach(btn => {
-        btn.addEventListener('click', handleRemovePattern);
+        specsList.appendChild(specItem);
+
+        specItem.querySelector('.spec-bar')!.addEventListener('click', () => specItem.classList.toggle('expanded'));
+
+        specItem.querySelector('.btn-move-up')?.addEventListener('click', e => { e.stopPropagation(); handleMoveUp(index); });
+        specItem.querySelector('.btn-move-down')?.addEventListener('click', e => { e.stopPropagation(); handleMoveDown(index); });
+        specItem.querySelector('.btn-delete')?.addEventListener('click', e => { e.stopPropagation(); handleDeleteSpec(index); });
+
+        specItem.querySelectorAll('input, textarea').forEach(input => {
+            input.addEventListener('change', () => saveSpecChanges(index));
+        });
     });
 }
 
-function handleRuleChange(event: Event) {
-    const target = event.target as HTMLInputElement | HTMLTextAreaElement;
-    const index = parseInt(target.dataset.index!);
-    const rules = [...currentConfig.rules];
-    const currentRule = rules[index];
+function saveSpecChanges(index: number) {
+    const specItem = document.querySelector(`[data-index="${index}"]`);
+    if (!specItem) return;
 
-    if (!currentRule) {
-        return;
-    }
+    const spec = currentConfig.specifications[index];
+    if (!spec) return;
 
-    if (target.classList.contains('rule-tag')) {
-        rules[index] = { ...currentRule, tag: target.value };
-    } else if (target.classList.contains('rule-match')) {
-        const match = target.value.split('\n')
-            .map(s => s.trim())
-            .filter(s => s.length > 0);
-        rules[index] = { ...currentRule, match };
-    }
+    const isDefault = index === currentConfig.specifications.length - 1;
 
-    currentConfig = { ...currentConfig, rules };
-}
+    const nameInput = specItem.querySelector('.spec-name-input') as HTMLInputElement;
+    const stickyInput = specItem.querySelector('.spec-sticky-input') as HTMLInputElement;
+    const urlsInput = specItem.querySelector('.spec-urls-input') as HTMLTextAreaElement | null;
+    const accentColorInput = specItem.querySelector('.spec-accent-color') as HTMLInputElement;
+    const textColorInput = specItem.querySelector('.spec-text-color') as HTMLInputElement;
+    const frameColorInput = specItem.querySelector('.spec-frame-color') as HTMLInputElement;
+    const tabBgTextInput = specItem.querySelector('.spec-tab-bg-text') as HTMLInputElement;
 
-function handleStickyChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const index = parseInt(target.dataset.index!);
-    const rules = [...currentConfig.rules];
-    const currentRule = rules[index];
+    const name = nameInput?.value.trim() as WindowName;
+    if (!name) return;
 
-    if (!currentRule) {
-        return;
-    }
+    const sticky = stickyInput?.checked ?? spec.sticky;
 
-    rules[index] = { ...currentRule, sticky: target.checked };
-    currentConfig = { ...currentConfig, rules };
-}
+    const accentColor = accentColorInput?.value || spec.theme?.accentColor;
+    const textColor = textColorInput?.value || spec.theme?.textColor;
+    const frameColor = frameColorInput?.value || spec.theme?.frameColor;
+    const tabBackgroundText = tabBgTextInput?.value || spec.theme?.tabBackgroundText;
 
-function handleThemeChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const index = parseInt(target.dataset.index!);
-    const rules = [...currentConfig.rules];
-    const currentRule = rules[index];
+    const theme = {
+        ...(accentColor !== undefined && { accentColor }),
+        ...(textColor !== undefined && { textColor }),
+        ...(frameColor !== undefined && { frameColor }),
+        ...(tabBackgroundText !== undefined && { tabBackgroundText }),
+    };
 
-    if (!currentRule) {
-        return;
-    }
+    let updatedSpec: NamedWindowSpecification;
 
-    const theme = currentRule.theme || {};
-
-    // Create new theme object with updated property (readonly fix)
-    let updatedTheme;
-    if (target.classList.contains('theme-accent')) {
-        updatedTheme = { ...theme, accentColor: target.value };
-    } else if (target.classList.contains('theme-text')) {
-        updatedTheme = { ...theme, textColor: target.value };
-    } else if (target.classList.contains('theme-frame')) {
-        updatedTheme = { ...theme, frameColor: target.value };
-    } else if (target.classList.contains('theme-tab-text')) {
-        updatedTheme = { ...theme, tabBackgroundText: target.value };
+    if (isDefault) {
+        updatedSpec = { ...spec, name, sticky, theme };
     } else {
-        updatedTheme = theme;
+        const urlPatterns = (urlsInput?.value ?? '')
+            .split('\n')
+            .map(u => u.trim())
+            .filter(u => u.length > 0);
+
+        const tabSpecs = urlPatterns.length > 0
+            ? urlPatterns.map(createTabSpecification)
+            : spec.tabSpecifications ?? [createTabSpecification('')];
+
+        updatedSpec = createNamedWindowSpecification(
+            name,
+            tabSpecs as unknown as readonly [any, ...any[]],
+            theme,
+            sticky
+        );
     }
 
-    rules[index] = { ...currentRule, theme: updatedTheme };
-    currentConfig = { ...currentConfig, rules };
+    const specs = [...currentConfig.specifications];
+    specs[index] = updatedSpec;
+    currentConfig = { ...currentConfig, specifications: specs };
 
-    // Update the color value display
-    const colorValueSpan = target.nextElementSibling as HTMLSpanElement;
-    if (colorValueSpan) {
-        colorValueSpan.textContent = target.value;
+    // Update the visible name in the bar
+    const nameEl = specItem.querySelector('.spec-name') as HTMLElement;
+    if (nameEl) nameEl.textContent = name;
+    const stickyEl = specItem.querySelector('.spec-sticky') as HTMLElement;
+    if (stickyEl) stickyEl.textContent = sticky ? '📌' : '';
+}
+
+function handleMoveUp(index: number) {
+    if (index <= 0) return;
+    const specs = [...currentConfig.specifications];
+    [specs[index - 1], specs[index]] = [specs[index]!, specs[index - 1]!];
+    currentConfig = { ...currentConfig, specifications: specs };
+    renderSpecs();
+}
+
+function handleMoveDown(index: number) {
+    if (index >= currentConfig.specifications.length - 1) return;
+    const specs = [...currentConfig.specifications];
+    [specs[index], specs[index + 1]] = [specs[index + 1]!, specs[index]!];
+    currentConfig = { ...currentConfig, specifications: specs };
+    renderSpecs();
+}
+
+function handleDeleteSpec(index: number) {
+    if (index === currentConfig.specifications.length - 1) {
+        showStatus('Cannot delete the default window', 'error');
+        return;
+    }
+    const specToDelete = currentConfig.specifications[index];
+    if (!specToDelete) return;
+
+    if (confirm(`Delete "${specToDelete.name}"? This cannot be undone.`)) {
+        const specs = currentConfig.specifications.filter((_, i) => i !== index);
+        currentConfig = { ...currentConfig, specifications: specs };
+        renderSpecs();
     }
 }
 
-function handlePatternChange(event: Event) {
-    const target = event.target as HTMLInputElement;
-    const index = parseInt(target.dataset.index!);
-    const patterns = [...currentConfig.ignoredUrlPatterns];
-    patterns[index] = target.value;
-    currentConfig = { ...currentConfig, ignoredUrlPatterns: patterns };
-}
-
-function handleRemoveRule(event: Event) {
-    const target = event.target as HTMLButtonElement;
-    const index = parseInt(target.dataset.index!);
-    const rules = currentConfig.rules.filter((_, i) => i !== index);
-    currentConfig = { ...currentConfig, rules };
-    renderRules();
-}
-
-function handleRemovePattern(event: Event) {
-    const target = event.target as HTMLButtonElement;
-    const index = parseInt(target.dataset.index!);
-    const patterns = currentConfig.ignoredUrlPatterns.filter((_, i) => i !== index);
-    currentConfig = { ...currentConfig, ignoredUrlPatterns: patterns };
-    renderPatterns();
+function handleAddSpec() {
+    // Insert a new blank spec just before the default (last) spec
+    const specs = [...currentConfig.specifications];
+    const newSpec = createNamedWindowSpecification(
+        'New Window' as WindowName,
+        [createTabSpecification('')],
+    );
+    specs.splice(specs.length - 1, 0, newSpec);
+    currentConfig = { ...currentConfig, specifications: specs };
+    renderSpecs();
+    // Auto-expand the newly added spec
+    const newIndex = specs.length - 2;
+    const newItem = document.querySelector(`[data-index="${newIndex}"]`);
+    newItem?.classList.add('expanded');
 }
 
 function setupEventListeners() {
-    document.getElementById('addRuleBtn')!.addEventListener('click', () => {
-        const rules = [...currentConfig.rules, {
-            tag: '[NEW]',
-            match: ['example.com'],
-            theme: { accentColor: '#3498db', textColor: '#ffffff' }
-        }];
-        currentConfig = { ...currentConfig, rules };
-        renderRules();
-    });
+    document.getElementById('addSpecBtn')?.addEventListener('click', handleAddSpec);
 
-    document.getElementById('addPatternBtn')!.addEventListener('click', () => {
-        const patterns = [...currentConfig.ignoredUrlPatterns, 'new-pattern:'];
-        currentConfig = { ...currentConfig, ignoredUrlPatterns: patterns };
-        renderPatterns();
-    });
-
-    document.getElementById('saveBtn')!.addEventListener('click', async () => {
+    document.getElementById('saveConfigBtn')?.addEventListener('click', async () => {
         try {
-            await configStore.saveConfiguration(currentConfig);
-            showStatus('Configuration saved successfully! Changes will take effect immediately.', 'success');
+            const ignoredUrlsTextarea = document.getElementById('ignoredUrlsContainer')
+                ?.querySelector('textarea') as HTMLTextAreaElement;
+            if (ignoredUrlsTextarea) {
+                const urlPatterns = ignoredUrlsTextarea.value
+                    .split('\n').map(u => u.trim()).filter(u => u.length > 0);
+                currentConfig = { ...currentConfig, globalIgnoredUrls: createGlobalIgnoredUrls(urlPatterns) };
+            }
 
-            // Notify background script to reload configuration
-            await browser.runtime.sendMessage({ type: 'configUpdated' });
+            await configRepository.savePrioritizedSpecifications(currentConfig);
+            showStatus('✓ Configuration saved successfully', 'success');
+            try {
+                await browser.runtime.sendMessage({ type: 'configUpdated' });
+            } catch {
+                // Background script may not be running — safe to ignore
+            }
         } catch (error) {
-            showStatus('Error saving configuration: ' + (error as Error).message, 'error');
+            showStatus('Error saving: ' + (error as Error).message, 'error');
         }
     });
 
-    document.getElementById('resetBtn')!.addEventListener('click', async () => {
-        if (confirm('Are you sure you want to reset to default configuration? This cannot be undone.')) {
-            currentConfig = DEFAULT_CONFIGURATION;
-            renderRules();
-            renderPatterns();
-            showStatus('Reset to default configuration. Click "Save" to apply.', 'success');
+    document.getElementById('resetConfigBtn')?.addEventListener('click', () => {
+        if (confirm('Reset to default configuration?')) {
+            currentConfig = createDefaultPrioritizedNamedWindowSpecifications();
+            renderSpecs();
+            renderIgnoredUrls();
+            showStatus('Reset to defaults. Click Save to apply.', 'success');
         }
     });
 
-    document.getElementById('exportBtn')!.addEventListener('click', () => {
+    document.getElementById('exportBtn')?.addEventListener('click', () => {
         const json = JSON.stringify(currentConfig, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -296,35 +302,29 @@ function setupEventListeners() {
         a.download = 'defenestrator-config.json';
         a.click();
         URL.revokeObjectURL(url);
-        showStatus('Configuration exported successfully!', 'success');
+        showStatus('✓ Configuration exported', 'success');
     });
 
-    document.getElementById('importBtn')!.addEventListener('click', () => {
+    document.getElementById('importBtn')?.addEventListener('click', () => {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'application/json';
         input.onchange = async (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (!file) return;
-
             try {
                 const text = await file.text();
-                const imported = JSON.parse(text) as Configuration;
-
-                // Validate structure
-                if (!imported.rules || !Array.isArray(imported.rules)) {
-                    throw new Error('Invalid configuration format: missing rules array');
+                const imported = JSON.parse(text);
+                if (!imported.specifications || !Array.isArray(imported.specifications)) {
+                    showStatus('Error importing: Invalid configuration format', 'error');
+                    return;
                 }
-                if (!imported.ignoredUrlPatterns || !Array.isArray(imported.ignoredUrlPatterns)) {
-                    throw new Error('Invalid configuration format: missing ignoredUrlPatterns array');
-                }
-
-                currentConfig = imported;
-                renderRules();
-                renderPatterns();
-                showStatus('Configuration imported successfully! Click "Save" to apply.', 'success');
+                currentConfig = imported as PrioritizedNamedWindowSpecifications;
+                renderSpecs();
+                renderIgnoredUrls();
+                showStatus('✓ Configuration imported. Click Save to apply.', 'success');
             } catch (error) {
-                showStatus('Error importing configuration: ' + (error as Error).message, 'error');
+                showStatus('Error importing: ' + (error as Error).message, 'error');
             }
         };
         input.click();
@@ -332,13 +332,11 @@ function setupEventListeners() {
 }
 
 function showStatus(message: string, type: 'success' | 'error') {
+    if (!statusMessage) return;
     statusMessage.textContent = message;
     statusMessage.className = `status-message ${type}`;
     statusMessage.style.display = 'block';
-
-    setTimeout(() => {
-        statusMessage.style.display = 'none';
-    }, 5000);
+    setTimeout(() => { statusMessage.style.display = 'none'; }, 4000);
 }
 
 function escapeHtml(text: string): string {

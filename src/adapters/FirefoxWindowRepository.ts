@@ -1,122 +1,166 @@
-import type { WindowRepository, BrowserWindow } from "../ports/WindowRepository.js";
-import type { WindowId, WindowTag } from "../domain/WindowTag.js";
-import type { TabId } from "../domain/Tab.js";
-import type { Logger } from "../ports/Logger.js";
-import type { Theme } from "../domain/TaggingRule.js";
+import type {WindowRepository} from "../application/ports/out/WindowRepository.js";
+import type {Tab, TabId} from "../domain/windows/Tab";
+import { createTab } from "../domain/windows/Tab";
+import type {Logger} from "../application/ports/Logger.js";
+import type {WindowId} from "../domain/WindowName";
+import { generateWindowId } from "../domain/WindowName";
+import type { Window } from "../domain/windows/Window";
+import { createWindow } from "../domain/windows/Window";
+import type { Theme } from "../domain/specifications/NamedWindowSpecification.js";
 
 declare const browser: typeof import("webextension-polyfill");
 
-const WINDOW_TAGS_STORAGE_KEY = 'defenestrator_window_tags';
+const WINDOW_ID_MAP_KEY = "defenestrator_firefox_window_id_map";
 
+/**
+ * Firefox adapter for WindowRepository
+ * Handles actual Firefox window operations (create, focus, close, visual properties)
+ * Maps Firefox numeric window IDs to domain UUIDs internally
+ */
 export class FirefoxWindowRepository implements WindowRepository {
+    // Cache mapping Firefox numeric IDs to our UUID-based WindowIds
+    private windowIdMap = new Map<number, WindowId>();
+    private mapLoaded = false;
+
     constructor(private readonly logger: Logger) {}
 
-    async getAllWindows(): Promise<BrowserWindow[]> {
+    private getFirefoxId(windowId: WindowId): number | undefined {
+        for (const [firefoxId, wId] of this.windowIdMap) {
+            if (wId === windowId) return firefoxId;
+        }
+        return undefined;
+    }
+
+    private async ensureMapLoaded(): Promise<void> {
+        if (this.mapLoaded) return;
+        const result = await browser.storage.session.get(WINDOW_ID_MAP_KEY);
+        const raw = result[WINDOW_ID_MAP_KEY] as Record<string, string> | undefined;
+        if (raw) {
+            for (const [firefoxId, windowId] of Object.entries(raw)) {
+                this.windowIdMap.set(Number(firefoxId), windowId as WindowId);
+            }
+        }
+        this.mapLoaded = true;
+    }
+
+    private async persistMap(): Promise<void> {
+        const raw: Record<string, string> = {};
+        for (const [firefoxId, windowId] of this.windowIdMap) {
+            raw[String(firefoxId)] = windowId;
+        }
+        await browser.storage.session.set({ [WINDOW_ID_MAP_KEY]: raw });
+    }
+
+    async getAllWindows(): Promise<Window[]> {
+        await this.ensureMapLoaded();
         const windows = await browser.windows.getAll({});
-        return windows.map(win => ({ id: win.id as WindowId }));
+        return Promise.all(
+            windows.map(window => this.getWindow(window.id as number))
+        );
     }
 
-    async setWindowTag(windowId: WindowId, tag: WindowTag, theme?: Theme): Promise<void> {
-        try {
-            // Set the visual window title prefix for AeroSpace
-            await browser.windows.update(windowId, { titlePreface: tag });
+    async getWindow(firefoxWindowId: number): Promise<Window> {
+        await this.ensureMapLoaded();
+        let windowId = this.windowIdMap.get(firefoxWindowId);
+        if (!windowId) {
+            windowId = generateWindowId();
+            this.windowIdMap.set(firefoxWindowId, windowId);
+            await this.persistMap();
+        }
 
-            // Persist the tag in storage (since titlePreface is not reliably readable)
-            const storage = await browser.storage.local.get(WINDOW_TAGS_STORAGE_KEY);
-            const windowTags = (storage[WINDOW_TAGS_STORAGE_KEY] as Record<number, string>) || {};
-            windowTags[windowId] = tag;
-            await browser.storage.local.set({ [WINDOW_TAGS_STORAGE_KEY]: windowTags });
+        this.logger.log(`[WINDOW] Fetching window ${windowId} (Firefox ID: ${firefoxWindowId}) with its tabs...`);
+        const tabs = await browser.tabs.query({windowId: firefoxWindowId});
+        const tabObjects = tabs.map(tab =>
+            createTab(tab.id as TabId, tab.url ?? "")
+        );
+        return createWindow(windowId, tabObjects);
+    }
 
-            // Apply theme if provided
-            if (theme) {
-                await this.applyTheme(windowId, theme);
-            }
+    async getWindowByDomainId(windowId: WindowId): Promise<Window | null> {
+        await this.ensureMapLoaded();
+        const firefoxId = this.getFirefoxId(windowId);
+        if (firefoxId === undefined) return null;
+        return this.getWindow(firefoxId);
+    }
 
-            this.logger.log(`[TAG] Window ${windowId} tagged as ${tag}${theme ? ' with theme' : ''}`);
-        } catch (e) {
-            this.logger.error(`[TAG] Error setting tag for ${windowId}:`, e);
-            throw e;
+    async openWindow(windowId: WindowId, tab: Tab): Promise<void> {
+        this.logger.log(`[WINDOW] Opening new window for domain ID ${windowId}, moving tab ${tab.id} into it`);
+        const newWindow = await browser.windows.create({});
+        const firefoxId = newWindow.id as number;
+        this.windowIdMap.set(firefoxId, windowId);
+        await this.persistMap();
+        const movedTabs = await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
+        const movedTab = Array.isArray(movedTabs) ? movedTabs[0] : movedTabs;
+        // Close the blank tab Firefox opens automatically
+        const blankTabs = newWindow.tabs?.filter(t => t.url === 'about:blank') ?? [];
+        for (const blankTab of blankTabs) {
+            await browser.tabs.remove(blankTab.id as number);
+        }
+        if (movedTab?.id !== undefined) {
+            await browser.tabs.update(movedTab.id, { active: true });
+            await browser.windows.update(firefoxId, { focused: true });
         }
     }
 
-    private async applyTheme(windowId: WindowId, theme: Theme): Promise<void> {
-        try {
-            this.logger.log(`[THEME] Attempting to apply theme to window ${windowId}:`, theme);
-
-            // Build theme object according to Firefox theme manifest format
-            const themeData: any = {
-                colors: {}
-            };
-
-            // Required for visibility - set toolbar colors
-            if (theme.accentColor) {
-                themeData.colors.toolbar = theme.accentColor;
-                themeData.colors.toolbar_field = theme.accentColor;
-            }
-
-            if (theme.textColor) {
-                themeData.colors.toolbar_text = theme.textColor;
-                themeData.colors.toolbar_field_text = theme.textColor;
-                themeData.colors.bookmark_text = theme.textColor;
-            }
-
-            // Optional: frame and tab colors
-            if (theme.frameColor) {
-                themeData.colors.frame = theme.frameColor;
-                themeData.colors.tab_background_separator = theme.frameColor;
-            }
-
-            if (theme.tabBackgroundText) {
-                themeData.colors.tab_background_text = theme.tabBackgroundText;
-            }
-
-            this.logger.log(`[THEME] Theme data prepared:`, themeData);
-
-            // Apply theme to specific window (per MDN docs, windowId should work as integer)
-            await browser.theme.update(windowId, themeData);
-            this.logger.log(`[THEME] Theme applied successfully to window ${windowId}`);
-        } catch (e) {
-            this.logger.error(`[THEME] Error applying theme to window ${windowId}:`, e);
-            // Don't throw - theming is not critical, but log the actual error
-            this.logger.error(`[THEME] Error details:`, JSON.stringify(e));
+    async setTheme(windowId: WindowId, theme: Theme): Promise<void> {
+        const firefoxId = this.getFirefoxId(windowId);
+        if (firefoxId === undefined) {
+            this.logger.error(`[WINDOW] Cannot set theme: unknown windowId ${windowId}`);
+            return;
         }
+        this.logger.log(`[WINDOW] Setting theme for window ${windowId} (Firefox ID: ${firefoxId})`);
+        const colors: Record<string, string> = {};
+        if (theme.accentColor)      colors['toolbar']            = theme.accentColor;
+        if (theme.textColor)        colors['toolbar_text']       = theme.textColor;
+        if (theme.frameColor)       colors['frame']              = theme.frameColor;
+        if (theme.tabBackgroundText) colors['tab_background_text'] = theme.tabBackgroundText;
+        await browser.theme.update(firefoxId, { colors });
     }
 
-    async getWindowTag(windowId: WindowId): Promise<WindowTag | null> {
-        try {
-            // Read from storage (titlePreface is not reliably readable via Firefox API)
-            const storage = await browser.storage.local.get(WINDOW_TAGS_STORAGE_KEY);
-            const windowTags = (storage[WINDOW_TAGS_STORAGE_KEY] as Record<number, string>) || {};
-            return (windowTags[windowId] as WindowTag) || null;
-        } catch (e) {
-            this.logger.error(`[TAG] Error getting tag for ${windowId}:`, e);
-            return null;
+    async setTitlePrefix(windowId: WindowId, prefix: string): Promise<void> {
+        const firefoxId = this.getFirefoxId(windowId);
+        if (firefoxId === undefined) {
+            this.logger.error(`[WINDOW] Cannot set title prefix: unknown windowId ${windowId}`);
+            return;
         }
+        this.logger.log(`[WINDOW] Setting title prefix "${prefix}" for window ${windowId} (Firefox ID: ${firefoxId})`);
+        await browser.windows.update(firefoxId, { titlePreface: prefix });
     }
 
-    async createWindowWithTab(tabId: TabId): Promise<WindowId> {
-        const newWindow = await browser.windows.create({ tabId });
-        return newWindow.id as WindowId;
-    }
-
-    async focusWindow(windowId: WindowId): Promise<void> {
-        await browser.windows.update(windowId, { focused: true });
+    async moveTab(tab: Tab, toWindowId: WindowId): Promise<void> {
+        const firefoxId = this.getFirefoxId(toWindowId);
+        if (firefoxId === undefined) {
+            this.logger.error(`[WINDOW] Cannot move tab: unknown windowId ${toWindowId}`);
+            return;
+        }
+        this.logger.log(`[TAB] Moving tab ${tab.id} to window ${toWindowId} (Firefox ID: ${firefoxId})`);
+        const movedTabs = await browser.tabs.move(tab.id, { windowId: firefoxId, index: -1 });
+        const movedTab = Array.isArray(movedTabs) ? movedTabs[0] : movedTabs;
+        if (movedTab?.id !== undefined) {
+            await browser.tabs.update(movedTab.id, { active: true });
+        }
+        await browser.windows.update(firefoxId, { focused: true, drawAttention: true });
     }
 
     async closeWindow(windowId: WindowId): Promise<void> {
-        await browser.windows.remove(windowId);
+        const firefoxId = this.getFirefoxId(windowId);
+        if (firefoxId === undefined) {
+            this.logger.error(`[WINDOW] Cannot close window: unknown windowId ${windowId}`);
+            return;
+        }
+        this.logger.log(`[WINDOW] Closing window ${windowId} (Firefox ID: ${firefoxId})`);
+        try {
+            await browser.windows.remove(firefoxId);
+        } catch (e) {
+            this.logger.log(`[WINDOW] Window ${windowId} (Firefox ID: ${firefoxId}) was already closed, ignoring`);
+        }
+        this.windowIdMap.delete(firefoxId);
+        await this.persistMap();
     }
 
-    async removeWindowTag(windowId: WindowId): Promise<void> {
-        try {
-            // Remove from storage
-            const storage = await browser.storage.local.get(WINDOW_TAGS_STORAGE_KEY);
-            const windowTags = (storage[WINDOW_TAGS_STORAGE_KEY] as Record<number, string>) || {};
-            delete windowTags[windowId];
-            await browser.storage.local.set({ [WINDOW_TAGS_STORAGE_KEY]: windowTags });
-            this.logger.log(`[TAG] Removed tag for window ${windowId}`);
-        } catch (e) {
-            this.logger.error(`[TAG] Error removing tag for ${windowId}:`, e);
-        }
+    async resolveWindowId(firefoxWindowId: number): Promise<WindowId | null> {
+        await this.ensureMapLoaded();
+        return this.windowIdMap.get(firefoxWindowId) ?? null;
     }
 }
+

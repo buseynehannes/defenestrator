@@ -9,8 +9,8 @@ This project follows a clean architecture pattern with three main layers:
 ### Domain (`src/domain/`)
 Contains all domain objects, business logic, and rules:
 - **Tab.ts** - Tab domain model and utilities
-- **WindowTag.ts** - Window tagging types and constants
-- **TaggingRule.ts** - Rules for determining which tag a URL should have
+- **WindowTag.ts** - ClassifiedWindow tagging types and constants
+- **PrioritizedWindowSet.ts** - Rules for determining which tag a URL should have
 - **TabDispatcher.ts** - Core business logic for dispatching tabs to appropriate windows
 
 ### Ports (`src/ports/`)
@@ -128,13 +128,13 @@ web-ext run    # Terminal 2 - auto reload in Firefox
 
 1. **Tab Creation/Update**: When a tab is created or its URL changes, the extension triggers
 2. **Tag Determination**: The URL is matched against configured rules to determine its tag
-3. **Window Search**: The extension looks for an existing window with the target tag
+3. **ClassifiedWindow Search**: The extension looks for an existing window with the target tag
 4. **Tab Dispatch**: The tab is either:
    - Moved to an existing tagged window
    - Used to create a new tagged window
    - Left in place if already in the correct window
 
-Window tags are:
+ClassifiedWindow tags are:
 - Stored in Firefox session storage for persistence
 - Applied as window title prefixes for AeroSpace integration
 

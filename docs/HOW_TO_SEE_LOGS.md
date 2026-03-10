@@ -13,38 +13,6 @@ You're opening the Browser Console (`Cmd+Shift+J`), but extension background scr
 4. **Click:** The **"Inspect"** button next to it
 5. **DevTools opens** with the Console tab showing your extension logs!
 
-```
-┌─────────────────────────────────────────────────┐
-│  about:debugging#/runtime/this-firefox         │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  This Firefox                                   │
-│  ┌───────────────────────────────────────────┐ │
-│  │ 🪟 AeroSpace Tab Dispatcher              │ │
-│  │ aerospace-dispatcher@hannesbuseyne.com    │ │
-│  │                                           │ │
-│  │ [Inspect] [Reload] [Remove]               │ │
-│  │     ↑                                     │ │
-│  │  CLICK HERE                               │ │
-│  └───────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────┘
-
-After clicking "Inspect":
-
-┌─────────────────────────────────────────────────┐
-│  Debugger for moz-extension://...              │
-├─────────────────────────────────────────────────┤
-│  Console | Debugger | Sources | ...            │
-│  ───────                                        │
-│                                                 │
-│  [CONFIG] Loading configuration...    ← LOGS!  │
-│  [CONFIG] Configuration loaded successfully    │
-│  [STARTUP] Restoring window tags...            │
-│  [DISPATCH] Processing: https://github.com...  │
-│                                                 │
-└─────────────────────────────────────────────────┘
-```
-
 ### Method 2: Using web-ext (In Terminal)
 
 When you run `web-ext run`, some logs appear in the **terminal**, but detailed logs are still in the Extension Console (Method 1).
@@ -59,12 +27,12 @@ But for full debugging, you still need to use Method 1.
 
 ## Different Consoles Explained
 
-| Console | Shortcut | What It Shows |
-|---------|----------|---------------|
-| **Browser Console** | `Cmd+Shift+J` | General Firefox logs, page errors |
-| **Web Console** | `Cmd+Option+K` | Current page's console (not extension) |
-| **Extension Background Console** | Via `about:debugging` → Inspect | **Your extension logs** ← USE THIS! |
-| **Options Page Console** | Right-click options page → Inspect | Options page UI logs |
+| Console                          | Shortcut                           | What It Shows                          |
+|----------------------------------|------------------------------------|----------------------------------------|
+| **Browser Console**              | `Cmd+Shift+J`                      | General Firefox logs, page errors      |
+| **Web Console**                  | `Cmd+Option+K`                     | Current page's console (not extension) |
+| **Extension Background Console** | Via `about:debugging` → Inspect    | **Your extension logs** ← USE THIS!    |
+| **Options Page Console**         | Right-click options page → Inspect | Options page UI logs                   |
 
 ## Where Your Logs Are
 
@@ -72,17 +40,63 @@ But for full debugging, you still need to use Method 1.
 **Location:** Extension Background Console (Method 1 above)
 
 **What you'll see:**
+
 ```javascript
-[CONFIG] Loading configuration...
-[CONFIG] Configuration loaded successfully
-[STARTUP] Restoring window tags...
-[STARTUP] Tagged window 123 as [DEV] based on 3/5 tabs
-[DISPATCH] Processing: https://github.com -> [DEV]
-[DISPATCH] >> Creating NEW window for [DEV]
-[THEME] Attempting to apply theme to window 456
-[THEME] Theme data prepared: {colors: {...}}
-[THEME] Theme applied successfully to window 456
-[TAG] Window 456 tagged as [DEV] with theme
+[CONFIG]
+Loading
+configuration
+...
+[CONFIG]
+Configuration
+loaded
+successfully
+    [STARTUP]
+Restoring
+window
+tags
+...
+[STARTUP]
+Tagged
+window
+123
+as [DEV]
+based
+on
+3 / 5
+tabs
+    [DISPATCH]
+Processing: https://github.com -> [DEV]
+    [DISPATCH] >> Creating
+NEW
+window
+for [DEV]
+        [THEME] Attempting
+to
+apply
+theme
+to
+window
+456
+    [THEME]
+Theme
+data
+prepared: {
+    colors: {...
+    }
+}
+[THEME]
+Theme
+applied
+successfully
+to
+window
+456
+    [TAG]
+Window
+456
+tagged
+as [DEV]
+with theme
 ```
 
 ### Options Page Logs (UI Interactions)
@@ -126,7 +140,7 @@ The console opens and you should immediately see:
 [CONFIG] Loading configuration...
 [CONFIG] Configuration loaded successfully
 [STARTUP] Restoring window tags...
-[STARTUP] Window tag restoration complete
+[STARTUP] ClassifiedWindow tag restoration complete
 ```
 
 ### 4. Test Tab Organization
@@ -138,7 +152,7 @@ The console opens and you should immediately see:
 [DISPATCH] Processing: https://github.com -> [DEV]
 [DISPATCH] >> Creating NEW window for [DEV]
 [THEME] Attempting to apply theme to window X
-[TAG] Window X tagged as [DEV] with theme
+[TAG] ClassifiedWindow X tagged as [DEV] with theme
 ```
 
 ## Quick Test Script
