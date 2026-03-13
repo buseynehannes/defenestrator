@@ -1,4 +1,4 @@
-.PHONY: help install build test lint clean publish dev watch coverage docs
+.PHONY: help install build test test-integration lint clean publish dev watch coverage docs
 
 # Variables
 NODE_MODULES := node_modules
@@ -26,6 +26,10 @@ build: install
 ## test: Run tests
 test:
 	npm test -- --run
+
+## test-integration: Run integration tests (requires Firefox and a built extension)
+test-integration: build
+	npm run test:integration
 
 ## test-watch: Run tests in watch mode
 test-watch:
