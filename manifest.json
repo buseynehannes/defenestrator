@@ -7,10 +7,27 @@
     "permissions": [
         "tabs",
         "storage",
-        "theme"
+        "theme",
+        "notifications"
     ],
     "icons": {
       "32": "icons/icon.svg"
+    },
+    "action": {
+        "default_popup": "src/popup.html",
+        "default_icon": {
+            "32": "icons/icon.svg"
+        },
+        "default_title": "Defenestrator"
+    },
+    "commands": {
+        "toggle-sticky": {
+            "suggested_key": {
+                "default": "Alt+Ctrl+T",
+                "mac": "Alt+Command+T"
+            },
+            "description": "Toggle sticky for the current window"
+        }
     },
     "host_permissions": [
         "<all_urls>"

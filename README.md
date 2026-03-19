@@ -9,7 +9,9 @@ A Firefox extension that automatically organizes tabs into themed windows based 
 - **URL pattern rules** — each named window is backed by one or more URL patterns that determine which tabs belong to it
 - **Prioritized rules** — rules are evaluated in order, so you have full control over which window wins when patterns overlap
 - **Window theming** — give each window a distinct look by configuring its accent, text, frame, and tab background colours
-- **Sticky windows** — mark a window as sticky so tabs are kept in it even after navigating away from a matching URL, as long as at least one matching tab remains
+- **Sticky windows** — mark a window as sticky so tabs are kept in it even after navigating away from a matching URL, as long as at least one matching tab remains. Toggle sticky for the current window in two ways:
+  - Click the toolbar icon and press **Make sticky / Remove sticky**
+  - Press **⌥⌘T** (macOS) / **Alt+Ctrl+T** (Windows/Linux) from anywhere — a notification confirms the change
 - **Default window** — a catch-all fallback window for tabs that don't match any rule
 - **Global ignored URLs** — exclude specific URLs from being routed altogether
 - **Session persistence** — named window assignments are restored when the browser restarts
