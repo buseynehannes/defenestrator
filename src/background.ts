@@ -10,6 +10,8 @@ import {HandleTabMovedService} from "./application/services/HandleTabMovedServic
 import {HandleNewWindowCreatedService} from "./application/services/HandleNewWindowCreatedService.js";
 import {HandleWindowSpecAssignedService} from "./application/services/HandleWindowSpecAssignedService.js";
 import {CloseWindowService} from "./application/services/CloseWindowService.js";
+import {GetCurrentWindowSpecService} from "./application/services/GetCurrentWindowSpecService.js";
+import {ToggleCurrentWindowStickyService} from "./application/services/ToggleCurrentWindowStickyService.js";
 import {createTab, createTabId} from "./domain/windows/Tab";
 
 declare const browser: typeof import("webextension-polyfill");
@@ -28,6 +30,8 @@ const handleTabMovedService = new HandleTabMovedService(windowRepository, logger
 const handleNewWindowCreatedService = new HandleNewWindowCreatedService(windowRepository, logger);
 const handleWindowSpecAssignedService = new HandleWindowSpecAssignedService(windowRepository, logger);
 const closeWindowService = new CloseWindowService(namedWindowsRepository, logger);
+const getCurrentWindowSpecService = new GetCurrentWindowSpecService(windowRepository, namedWindowsRepository, logger);
+const toggleCurrentWindowStickyService = new ToggleCurrentWindowStickyService(windowRepository, namedWindowsRepository, prioritizedSpecsRepository, logger);
 
 namedWindowsRepository.onEvent(event => {
     switch (event.type) {
@@ -150,4 +154,41 @@ browser.windows.onRemoved.addListener((firefoxWindowId) => {
     });
 });
 
+// --- POPUP MESSAGES ---
 
+browser.runtime.onMessage.addListener((message: unknown) => {
+    const msg = message as { type: string; windowId?: number };
+    if (msg.type === 'GET_CURRENT_WINDOW_SPEC' && msg.windowId !== undefined) {
+        return getCurrentWindowSpecService.execute(msg.windowId);
+    }
+    if (msg.type === 'TOGGLE_STICKY' && msg.windowId !== undefined) {
+        return toggleCurrentWindowStickyService.execute(msg.windowId);
+    }
+    return undefined;
+});
+
+// --- KEYBOARD SHORTCUTS ---
+
+browser.commands.onCommand.addListener((command) => {
+    if (command === 'toggle-sticky') {
+        enqueue(async () => {
+            try {
+                const win = await browser.windows.getCurrent();
+                const spec = await toggleCurrentWindowStickyService.execute(win.id as number);
+                if (spec) {
+                    const message = spec.sticky
+                        ? `"${spec.name}" is now sticky — tabs won't be moved out.`
+                        : `"${spec.name}" is no longer sticky.`;
+                    await browser.notifications.create({
+                        type: 'basic',
+                        iconUrl: 'icons/icon.svg',
+                        title: 'Defenestrator',
+                        message,
+                    });
+                }
+            } catch (e) {
+                logger.error('[COMMAND] Error toggling sticky:', e);
+            }
+        });
+    }
+});

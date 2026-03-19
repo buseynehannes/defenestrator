@@ -24,6 +24,18 @@ export interface PrioritizedNamedWindowSpecifications {
 }
 
 /**
+ * Create a new PrioritizedNamedWindowSpecifications with one specification replaced.
+ * All other specs and the global ignored URLs are preserved.
+ */
+export function withUpdatedSpecification(
+    specs: PrioritizedNamedWindowSpecifications,
+    updated: NamedWindowSpecification
+): PrioritizedNamedWindowSpecifications {
+    const newSpecs = specs.specifications.map(s => s.name === updated.name ? updated : s);
+    return createPrioritizedNamedWindowSpecifications(newSpecs, specs.globalIgnoredUrls);
+}
+
+/**
  * Factory method to create a PrioritizedNamedWindowSpecifications
  * @param specifications Ordered list of named window specifications (earlier = higher priority)
  * @param globalIgnoredUrls URL patterns that are globally ignored across all windows

@@ -16,7 +16,8 @@ const commonOptions = {
 
 const entryPoints = {
   background: './src/background.ts',
-  options: './src/options.ts'
+  options: './src/options.ts',
+  popup: './src/popup.ts'
 };
 
 const buildOptions = {

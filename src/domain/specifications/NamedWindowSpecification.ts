@@ -36,6 +36,15 @@ export interface NamedWindowSpecification {
 }
 
 /**
+ * Create a copy of a specification with the sticky flag toggled.
+ * Default specifications cannot be sticky — returns the spec unchanged in that case.
+ */
+export function withStickyToggled(spec: NamedWindowSpecification): NamedWindowSpecification {
+    if (spec.isDefault || !spec.tabSpecifications) return spec;
+    return createNamedWindowSpecification(spec.name, spec.tabSpecifications, spec.theme, !spec.sticky);
+}
+
+/**
  * Create a named window specification with tab specifications
  * @param name The name of the window specification
  * @param tabSpecifications At least one tab specification is required (non-empty array)
