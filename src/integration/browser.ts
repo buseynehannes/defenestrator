@@ -60,6 +60,33 @@ export interface WindowRule {
 }
 
 /**
+ * Seeds a "paused" config that adds 'localhost' to ignoredUrls so the extension
+ * silently skips all test tabs during window/tab setup in beforeEach.
+ *
+ * This prevents the extension from routing test tabs into unexpected windows
+ * before the real test config is applied via seedConfig().
+ */
+export async function pauseExtension(
+    driver: FirefoxDriver,
+    extensionBaseUrl: string,
+): Promise<void> {
+    await driver.get(`${extensionBaseUrl}/src/options.html`);
+    await driver.executeScript(
+        `return browser.storage.local.set({ defenestrator_config: arguments[0] })`,
+        {
+            version: '1.0',
+            defaultWindowName: '[OTHER]',
+            ignoredUrls: ['about:', 'moz-extension:', 'localhost'],
+            specifications: [
+                { name: '[OTHER]', matchUrls: [], sticky: false },
+            ],
+        }
+    );
+    // Give the background script time to clear and re-initialise
+    await driver.sleep(1000);
+}
+
+/**
  * Seeds the extension configuration by writing directly to browser.storage.local
  * from within the options page context (which shares the extension's origin).
  *
