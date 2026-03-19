@@ -1,7 +1,8 @@
 import {describe, it, expect} from 'vitest';
 import {
     createPrioritizedNamedWindowSpecifications,
-    createDefaultPrioritizedNamedWindowSpecifications
+    createDefaultPrioritizedNamedWindowSpecifications,
+    withUpdatedSpecification,
 } from './PrioritizedNamedWindowSpecifications';
 import {createNamedWindowSpecification} from './NamedWindowSpecification';
 import {createDefaultNamedWindowSpecification} from './DefaultNamedWindowSpecification';
@@ -118,6 +119,74 @@ describe('PrioritizedNamedWindowSpecifications', () => {
         it('does not globally ignore regular https URLs', () => {
             const defaults = createDefaultPrioritizedNamedWindowSpecifications();
             expect(defaults.globalIgnoredUrls.isIgnored({id: 1 as any, url: 'https://example.com'})).toBe(false);
+        });
+    });
+
+    describe('withUpdatedSpecification', () => {
+        it('replaces the matching spec while keeping all others', () => {
+            const workSpec = createNamedWindowSpecification(
+                '[WORK]' as any,
+                [createTabSpecification('work.com')]
+            );
+            const prioritized = createPrioritizedNamedWindowSpecifications(
+                [emailSpec, workSpec, defaultSpec],
+                globalIgnoredUrls
+            );
+            const updatedEmail = createNamedWindowSpecification(
+                '[EMAIL]' as any,
+                [createTabSpecification('mail.google.com')],
+                undefined,
+                true // toggled sticky
+            );
+
+            const result = withUpdatedSpecification(prioritized, updatedEmail);
+
+            expect(result.specifications).toHaveLength(3);
+            expect(result.getSpecificationByName('[EMAIL]' as any)!.sticky).toBe(true);
+            expect(result.getSpecificationByName('[WORK]' as any)).toBe(workSpec);
+            expect(result.getSpecificationByName('[DEFAULT]' as any)).toBe(defaultSpec);
+        });
+
+        it('preserves the original order of specifications', () => {
+            const prioritized = createPrioritizedNamedWindowSpecifications(
+                [emailSpec, defaultSpec],
+                globalIgnoredUrls
+            );
+            const updatedEmail = createNamedWindowSpecification(
+                '[EMAIL]' as any,
+                [createTabSpecification('mail.google.com')],
+                undefined,
+                true
+            );
+
+            const result = withUpdatedSpecification(prioritized, updatedEmail);
+
+            expect(result.specifications[0]!.name).toBe('[EMAIL]');
+            expect(result.specifications[1]!.name).toBe('[DEFAULT]');
+        });
+
+        it('preserves the globalIgnoredUrls', () => {
+            const prioritized = createPrioritizedNamedWindowSpecifications(
+                [emailSpec, defaultSpec],
+                globalIgnoredUrls
+            );
+            const result = withUpdatedSpecification(prioritized, emailSpec);
+            expect(result.globalIgnoredUrls).toBe(globalIgnoredUrls);
+        });
+
+        it('does not mutate the original', () => {
+            const prioritized = createPrioritizedNamedWindowSpecifications(
+                [emailSpec, defaultSpec],
+                globalIgnoredUrls
+            );
+            const updatedEmail = createNamedWindowSpecification(
+                '[EMAIL]' as any,
+                [createTabSpecification('mail.google.com')],
+                undefined,
+                true
+            );
+            withUpdatedSpecification(prioritized, updatedEmail);
+            expect(prioritized.getSpecificationByName('[EMAIL]' as any)!.sticky).toBe(false);
         });
     });
 });
