@@ -10,8 +10,11 @@ export default defineConfig({
         hookTimeout: 60_000,
         // Run integration tests in a single fork so the browser session is shared
         pool: 'forks',
-        maxWorkers: 1,
-        minWorkers: 1,
+        poolOptions: {
+            forks: {
+                singleFork: true,
+            },
+        },
     },
     resolve: {
         extensions: ['.ts', '.js'],
