@@ -15,6 +15,10 @@ export async function launchFirefoxWithExtension(): Promise<FirefoxDriver> {
     const options = new Options();
     options.addArguments('-remote-allow-system-access');
 
+    if (process.env['CI']) {
+        options.addArguments('--headless');
+    }
+
     const driver = (await new Builder()
         .forBrowser('firefox')
         .setFirefoxOptions(options)
