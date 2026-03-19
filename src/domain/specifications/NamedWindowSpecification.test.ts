@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createNamedWindowSpecification } from './NamedWindowSpecification';
+import { createNamedWindowSpecification, withStickyToggled } from './NamedWindowSpecification';
+import { createDefaultNamedWindowSpecification } from './DefaultNamedWindowSpecification';
 import { createTabSpecification } from './TabSpecification';
 import { createTab, createTabId } from '../windows/Tab';
 import { createWindow } from '../windows/Window';
@@ -149,6 +150,42 @@ describe('NamedWindowSpecification', () => {
         it('has no theme when none is provided', () => {
             const spec = createNamedWindowSpecification(name, [emailSpec]);
             expect(spec.theme).toBeUndefined();
+        });
+    });
+
+    describe('withStickyToggled', () => {
+        it('returns a non-sticky copy of a sticky spec', () => {
+            const sticky = createNamedWindowSpecification(name, [emailSpec], undefined, true);
+            const toggled = withStickyToggled(sticky);
+            expect(toggled.sticky).toBe(false);
+        });
+
+        it('returns a sticky copy of a non-sticky spec', () => {
+            const nonSticky = createNamedWindowSpecification(name, [emailSpec]);
+            const toggled = withStickyToggled(nonSticky);
+            expect(toggled.sticky).toBe(true);
+        });
+
+        it('preserves name, tabSpecifications and theme', () => {
+            const theme = { accentColor: '#ff0000' };
+            const spec = createNamedWindowSpecification(name, [emailSpec, outlookSpec], theme);
+            const toggled = withStickyToggled(spec);
+            expect(toggled.name).toBe(name);
+            expect(toggled.tabSpecifications).toEqual([emailSpec, outlookSpec]);
+            expect(toggled.theme).toEqual(theme);
+        });
+
+        it('returns the default spec unchanged (default cannot be sticky)', () => {
+            const def = createDefaultNamedWindowSpecification('[DEFAULT]' as WindowName);
+            const result = withStickyToggled(def);
+            expect(result).toBe(def);
+            expect(result.sticky).toBe(false);
+        });
+
+        it('does not mutate the original spec', () => {
+            const original = createNamedWindowSpecification(name, [emailSpec]);
+            withStickyToggled(original);
+            expect(original.sticky).toBe(false);
         });
     });
 });
