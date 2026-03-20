@@ -59,11 +59,17 @@ async function retry<T>(fn: () => Promise<T>, attempts = 4, delayMs = 50): Promi
 }
 
 // Async mutex — ensures browser events are processed one at a time
-let processingChain = Promise.resolve();
+let processingChain: Promise<unknown> = Promise.resolve();
 
 function enqueue(fn: () => Promise<void>): void {
-    processingChain = processingChain.then(fn).catch(() => {
-    });
+    processingChain = processingChain.then(fn).catch(() => {});
+}
+
+function enqueueAndReturn<T>(fn: () => Promise<T>): Promise<T> {
+    const result = processingChain.then(() => fn());
+    // Keep the chain moving even if this call rejects
+    processingChain = result.catch(() => {});
+    return result;
 }
 
 async function startup() {
@@ -159,10 +165,10 @@ browser.windows.onRemoved.addListener((firefoxWindowId) => {
 browser.runtime.onMessage.addListener((message: unknown) => {
     const msg = message as { type: string; windowId?: number };
     if (msg.type === 'GET_CURRENT_WINDOW_SPEC' && msg.windowId !== undefined) {
-        return getCurrentWindowSpecService.execute(msg.windowId);
+        return enqueueAndReturn(() => getCurrentWindowSpecService.execute(msg.windowId!));
     }
     if (msg.type === 'TOGGLE_STICKY' && msg.windowId !== undefined) {
-        return toggleCurrentWindowStickyService.execute(msg.windowId);
+        return enqueueAndReturn(() => toggleCurrentWindowStickyService.execute(msg.windowId!));
     }
     return undefined;
 });
