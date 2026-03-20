@@ -188,7 +188,7 @@ export function createNamedWindows(
             // Assign the current window to the target spec
             const newMap = new Map(windowIdMap);
             newMap.set(currentWindowId, targetSpec.name);
-            return createNamedWindows(prioritizedSpecs, newMap);
+            return createNamedWindows(prioritizedSpecs, newMap, false, [...pendingEvents]);
         },
 
         moveTab(tab: Tab, fromWindowId: WindowId, targetSpec: NamedWindowSpecification): NamedWindows {
@@ -202,11 +202,11 @@ export function createNamedWindows(
             const newMap = new Map(windowIdMap);
             newMap.set(targetWindowId, targetSpec.name);
 
-            const additionalEvents: DomainEvent[] = isNewWindow
-                ? [createNewWindowCreatedEvent(targetWindowId, tab, targetSpec)]
-                : [createTabMovedEvent(tab, fromWindowId, targetWindowId)];
+            const newEvent: DomainEvent = isNewWindow
+                ? createNewWindowCreatedEvent(targetWindowId, tab, targetSpec)
+                : createTabMovedEvent(tab, fromWindowId, targetWindowId);
 
-            return createNamedWindows(prioritizedSpecs, newMap, false, additionalEvents);
+            return createNamedWindows(prioritizedSpecs, newMap, false, [...pendingEvents, newEvent]);
         },
 
         clearWindow(windowId: WindowId): NamedWindows {

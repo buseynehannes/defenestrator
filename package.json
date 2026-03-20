@@ -10,7 +10,8 @@
     "clean": "rm -rf dist",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "keywords": [
     "firefox",
@@ -21,9 +22,13 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/selenium-webdriver": "^4.35.5",
     "@types/webextension-polyfill": "^0.12.0",
     "@vitest/coverage-v8": "^4.0.18",
     "esbuild": "^0.27.3",
+    "geckodriver": "^6.1.0",
+    "selenium-webdriver": "^4.41.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
