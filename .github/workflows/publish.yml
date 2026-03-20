@@ -19,11 +19,17 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install Firefox
+        uses: browser-actions/setup-firefox@v1
+
       - name: Build (includes type-checking)
         run: make build
 
       - name: Test
         run: make test
+
+      - name: Integration Test
+        run: make test-integration
 
       - name: Sign extension
         run: make sign

@@ -1,152 +1,44 @@
-# Defenestrator - Firefox Tab Organizer
+# Tab Defenestrator
 
-A Firefox extension that automatically organizes tabs into tagged windows based on URL patterns, designed to work with AeroSpace window manager.
+A Firefox extension that automatically organizes tabs into themed windows based on URL patterns — designed to integrate with the [AeroSpace](https://github.com/nikitabobko/AeroSpace) window manager.
 
-## Architecture
+## Features
 
-This project follows a clean architecture pattern with three main layers:
+- **Window title prefix** — each named window gets its rule name set as a title prefix (via Firefox's `titlePreface`), making it directly targetable by AeroSpace's title-matching rules
+- **Automatic tab routing** — tabs are moved to the right window the moment they are opened or navigated
+- **URL pattern rules** — each named window is backed by one or more URL patterns that determine which tabs belong to it
+- **Prioritized rules** — rules are evaluated in order, so you have full control over which window wins when patterns overlap
+- **Window theming** — give each window a distinct look by configuring its accent, text, frame, and tab background colours
+- **Sticky windows** — mark a window as sticky so tabs are kept in it even after navigating away from a matching URL, as long as at least one matching tab remains
+- **Default window** — a catch-all fallback window for tabs that don't match any rule
+- **Global ignored URLs** — exclude specific URLs from being routed altogether
+- **Session persistence** — named window assignments are restored when the browser restarts
 
-### Domain (`src/domain/`)
-Contains all domain objects, business logic, and rules:
-- **Tab.ts** - Tab domain model and utilities
-- **WindowTag.ts** - ClassifiedWindow tagging types and constants
-- **PrioritizedWindowSet.ts** - Rules for determining which tag a URL should have
-- **TabDispatcher.ts** - Core business logic for dispatching tabs to appropriate windows
+## Design Philosophy
 
-### Ports (`src/ports/`)
-Interfaces defining domain-level intents:
-- **TabRepository.ts** - Interface for tab operations
-- **WindowRepository.ts** - Interface for window operations
-- **Logger.ts** - Interface for logging
+Rules are declared, not scripted. You describe *what each window is for* (which URLs belong there, how it looks, how it behaves) and the extension takes care of routing tabs automatically. The goal is zero manual tab management — open a link and it ends up exactly where you expect it.
 
-### Adapters (`src/adapters/`)
-Firefox-specific implementations:
-- **FirefoxTabRepository.ts** - Firefox implementation of TabRepository
-- **FirefoxWindowRepository.ts** - Firefox implementation of WindowRepository
-- **ConsoleLogger.ts** - Console implementation of Logger
+## Setup
 
-## Configuration
-
-Edit `src/config.ts` to customize your tagging rules:
-
-```typescript
-export const RULE_SETS: readonly TaggingRule[] = [
-    { tag: "[DEV]", match: ["github.com", "bitbucket.com"] },
-    { tag: "[MEET]", match: ["meet.google.com", "zoom.us"] },
-    // ... add your own rules
-];
-```
-
-Tabs that don't match any rule will be tagged with `[RESEARCH]` by default.
-
-## Development
-
-### Prerequisites
-- Node.js and npm
-- TypeScript 5.x
-
-### Build
+**Prerequisites:** Node.js and npm
 
 ```bash
-# Install dependencies
-npm install
-
-# Build the extension
-npm run build
-
-# Watch mode for development
-npm run watch
-
-# Clean build artifacts
-npm run clean
+make install   # install dependencies
+make build     # build the extension
+make test      # run tests
 ```
 
-### Testing
-
-```bash
-# Run tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run tests with coverage
-npm run test:coverage
-```
-
-**Test Coverage:** 100% on all domain files  
-See [TESTING.md](docs/TESTING.md) for detailed testing documentation.
-
-### Project Structure
-
-```
-defenestrator/
-├── src/
-│   ├── domain/           # Domain models and business logic
-│   ├── ports/            # Interface definitions
-│   ├── adapters/         # Firefox-specific implementations
-│   ├── config.ts         # Configuration
-│   └── background.ts     # Extension entry point
-├── dist/                 # Compiled JavaScript output
-├── polyfill/            # webextension-polyfill library
-├── manifest.json        # Firefox extension manifest
-├── package.json
-└── tsconfig.json
-```
+Run `make help` to see all available targets.
 
 ### Loading in Firefox
 
-**Quick Start:**
+1. Run `make build`
+2. Open `about:debugging#/runtime/this-firefox` in Firefox
+3. Click **Load Temporary Add-on** and select `manifest.json`
+
+For development with auto-reload:
+
 ```bash
-# 1. Build the extension
-npm run build
-
-# 2. Open Firefox → about:debugging#/runtime/this-firefox
-# 3. Click "Load Temporary Add-on"
-# 4. Select manifest.json from this directory
+make watch  # auto-rebuild on file changes
+web-ext run # auto-reload in Firefox (requires web-ext: npm i -g web-ext)
 ```
-
-**For detailed instructions including:**
-- Development workflow with auto-reload
-- Debugging tips
-- Console logging
-- Common issues and solutions
-
-See **[LOCAL_TESTING.md](LOCAL_TESTING.md)** for the complete guide.
-
-**Alternative - Using web-ext (recommended for development):**
-```bash
-# Install web-ext globally
-npm install -g web-ext
-
-# Run with auto-reload
-npm run watch  # Terminal 1 - auto rebuild
-web-ext run    # Terminal 2 - auto reload in Firefox
-```
-
-## How It Works
-
-1. **Tab Creation/Update**: When a tab is created or its URL changes, the extension triggers
-2. **Tag Determination**: The URL is matched against configured rules to determine its tag
-3. **ClassifiedWindow Search**: The extension looks for an existing window with the target tag
-4. **Tab Dispatch**: The tab is either:
-   - Moved to an existing tagged window
-   - Used to create a new tagged window
-   - Left in place if already in the correct window
-
-ClassifiedWindow tags are:
-- Stored in Firefox session storage for persistence
-- Applied as window title prefixes for AeroSpace integration
-
-## TypeScript Features
-
-This codebase uses strict TypeScript with:
-- Strict null checks
-- No implicit any
-- No unchecked indexed access
-- Exact optional property types
-- Strong typing throughout with branded types (TabId, WindowId, etc.)
-
-## License
-
-ISC
