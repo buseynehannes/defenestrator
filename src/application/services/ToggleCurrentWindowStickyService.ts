@@ -25,32 +25,37 @@ export class ToggleCurrentWindowStickyService implements ToggleCurrentWindowStic
         const namedWindows = await this.namedWindowsRepository.get();
         if (!namedWindows) return null;
 
-        const currentSpec = namedWindows.getSpecifications()
+        // Use namedWindows only to determine which spec name is assigned to this window (session state role)
+        const assignedSpec = namedWindows.getSpecifications()
             .find(spec => namedWindows.getWindowId(spec) === windowId);
 
-        if (!currentSpec) {
+        if (!assignedSpec) {
             this.logger.log(`[POPUP] Toggle sticky: no spec found for window ${firefoxWindowId}`);
             return null;
         }
 
-        if (currentSpec.isDefault) {
+        if (assignedSpec.isDefault) {
             this.logger.log('[POPUP] Toggle sticky: default spec cannot be made sticky');
             return {
-                name: currentSpec.name,
-                sticky: currentSpec.sticky,
+                name: assignedSpec.name,
+                sticky: assignedSpec.sticky,
                 isDefault: true,
                 matchUrls: [],
             };
         }
 
+        // Fetch the canonical spec from the configuration repository to avoid mixing objects from two stores
         const specs = await this.specsRepository.getPrioritizedSpecifications();
         if (!specs) return null;
 
-        const updatedSpec = withStickyToggled(currentSpec);
+        const canonicalSpec = specs.getSpecificationByName(assignedSpec.name);
+        if (!canonicalSpec) return null;
+
+        const updatedSpec = withStickyToggled(canonicalSpec);
         const updatedSpecs = withUpdatedSpecification(specs, updatedSpec);
         await this.specsRepository.savePrioritizedSpecifications(updatedSpecs);
 
-        this.logger.log(`[POPUP] Toggled sticky for "${currentSpec.name}": ${currentSpec.sticky} → ${updatedSpec.sticky}`);
+        this.logger.log(`[POPUP] Toggled sticky for "${canonicalSpec.name}": ${canonicalSpec.sticky} → ${updatedSpec.sticky}`);
 
         return {
             name: updatedSpec.name,
