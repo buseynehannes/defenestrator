@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Tab Defenestrator",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "author": "Hannes Buseyne",
     "description": "Automatically route tabs into dedicated, themed windows based on URL rules. Keep your work, research, and personal browsing in separate windows — always.",
     "homepage_url": "https://github.com/hbuseyne/defenestrator",

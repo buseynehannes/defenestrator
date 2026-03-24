@@ -1,6 +1,6 @@
 {
   "name": "defenestrator",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Firefox extension to automatically organize tabs into tagged windows",
   "scripts": {
     "build": "node esbuild.config.js",
