@@ -61,7 +61,7 @@ export class ToggleCurrentWindowStickyService implements ToggleCurrentWindowStic
             name: updatedSpec.name,
             sticky: updatedSpec.sticky,
             isDefault: false,
-            matchUrls: updatedSpec.tabSpecifications?.map(ts => ts.urlPattern) ?? [],
+            matchUrls: updatedSpec.isDefault ? [] : updatedSpec.tabSpecifications.map((ts: { urlPattern: string }) => ts.urlPattern),
         };
     }
 }

@@ -1,6 +1,6 @@
 {
   "name": "defenestrator",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "description": "Firefox extension to automatically organize tabs into tagged windows",
   "scripts": {
     "build": "node esbuild.config.js",
@@ -19,7 +19,7 @@
     "tabs",
     "aerospace"
   ],
-  "author": "",
+  "author": "Hannes Buseyne",
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^25.5.0",

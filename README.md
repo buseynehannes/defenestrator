@@ -20,6 +20,10 @@ A Firefox extension that automatically organizes tabs into themed windows based 
 
 Rules are declared, not scripted. You describe *what each window is for* (which URLs belong there, how it looks, how it behaves) and the extension takes care of routing tabs automatically. The goal is zero manual tab management — open a link and it ends up exactly where you expect it.
 
+## Documentation
+
+→ **[How to use Tab Defenestrator](docs/USAGE.md)** — named windows explained, URL pattern matching, sticky mode, theming, AeroSpace integration, and more.
+
 ## Setup
 
 **Prerequisites:** Node.js and npm

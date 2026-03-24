@@ -93,7 +93,7 @@ export class ConfigurationPrioritizedNamedWindowSpecificationsRepository impleme
             ignoredUrls: [...specs.globalIgnoredUrls.urlPatterns],
             specifications: specs.specifications.map(spec => ({
                 name: spec.name,
-                matchUrls: spec.tabSpecifications?.map(s => s.urlPattern) ?? [],
+                matchUrls: spec.isDefault ? [] : spec.tabSpecifications.map(s => s.urlPattern),
                 ...(spec.theme?.accentColor !== undefined && {accentColor: spec.theme.accentColor}),
                 ...(spec.theme?.textColor !== undefined && {textColor: spec.theme.textColor}),
                 ...(spec.theme?.frameColor !== undefined && {frameColor: spec.theme.frameColor}),

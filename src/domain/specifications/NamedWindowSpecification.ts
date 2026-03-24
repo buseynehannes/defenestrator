@@ -10,37 +10,35 @@ export interface Theme {
     readonly tabBackgroundText?: string; // Active tab text color
 }
 
-export interface NamedWindowSpecification {
+interface WindowSpecBase {
     readonly name: WindowName;
     readonly theme?: Theme;
     readonly sticky: boolean;
-    readonly isDefault: boolean;
-    /**
-     * The tab specifications for this window. Absent on default specifications.
-     */
-    readonly tabSpecifications?: readonly [TabSpecification, ...TabSpecification[]];
-
-    /**
-     * Check if a tab from outside should be accepted/moved into this window
-     * Does not consider stickiness - only the tab specification matching
-     */
     shouldAcceptTab(tab: Tab): boolean;
-
-    /**
-     * Check if a tab already in this window should be kept
-     * Considers stickiness - if sticky, tab can stay even if it doesn't match specs
-     */
     shouldKeepTab(tab: Tab): boolean;
-
     isSatisfiedByWindow(window: Window): boolean;
 }
+
+/** The fallback specification that matches any window or tab. Always non-sticky. */
+export interface DefaultWindowSpec extends WindowSpecBase {
+    readonly isDefault: true;
+    readonly sticky: false;
+}
+
+/** A rule-based specification with at least one tab specification. */
+export interface RuleBasedWindowSpec extends WindowSpecBase {
+    readonly isDefault: false;
+    readonly tabSpecifications: readonly [TabSpecification, ...TabSpecification[]];
+}
+
+export type NamedWindowSpecification = DefaultWindowSpec | RuleBasedWindowSpec;
 
 /**
  * Create a copy of a specification with the sticky flag toggled.
  * Default specifications cannot be sticky — returns the spec unchanged in that case.
  */
 export function withStickyToggled(spec: NamedWindowSpecification): NamedWindowSpecification {
-    if (spec.isDefault || !spec.tabSpecifications) return spec;
+    if (spec.isDefault) return spec;
     return createNamedWindowSpecification(spec.name, spec.tabSpecifications, spec.theme, !spec.sticky);
 }
 
@@ -56,7 +54,7 @@ export function createNamedWindowSpecification(
     tabSpecifications: readonly [TabSpecification, ...TabSpecification[]],
     theme?: Theme,
     sticky: boolean = false
-): NamedWindowSpecification {
+): RuleBasedWindowSpec {
     const frozenTabSpecs = Object.freeze([...tabSpecifications]) as readonly [TabSpecification, ...TabSpecification[]];
     return Object.freeze({
         name,

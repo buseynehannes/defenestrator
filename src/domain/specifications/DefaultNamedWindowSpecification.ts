@@ -1,7 +1,7 @@
 import type {WindowName} from "../WindowName";
 import type {Tab} from "../windows/Tab";
 import type {Window} from "../windows/Window";
-import type {NamedWindowSpecification, Theme} from "./NamedWindowSpecification";
+import type {DefaultWindowSpec, Theme} from "./NamedWindowSpecification";
 
 /**
  * Create a default specification that matches any window or tab
@@ -10,7 +10,7 @@ import type {NamedWindowSpecification, Theme} from "./NamedWindowSpecification";
 export function createDefaultNamedWindowSpecification(
     defaultName: WindowName,
     theme?: Theme
-): NamedWindowSpecification {
+): DefaultWindowSpec {
     return Object.freeze({
         name: defaultName,
         sticky: false,

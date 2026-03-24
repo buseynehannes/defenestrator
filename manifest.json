@@ -3,7 +3,8 @@
     "name": "Tab Defenestrator",
     "version": "1.2.0",
     "author": "Hannes Buseyne",
-    "description": "Automatically organize tabs into themed tagged windows for AeroSpace.",
+    "description": "Automatically route tabs into dedicated, themed windows based on URL rules. Keep your work, research, and personal browsing in separate windows — always.",
+    "homepage_url": "https://github.com/hbuseyne/defenestrator",
     "permissions": [
         "tabs",
         "storage",
