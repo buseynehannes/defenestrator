@@ -4,7 +4,8 @@ import type { PrioritizedNamedWindowSpecifications } from "./domain/specificatio
 import { createDefaultPrioritizedNamedWindowSpecifications } from "./domain/specifications/PrioritizedNamedWindowSpecifications.js";
 import { createGlobalIgnoredUrls } from "./domain/specifications/GlobalIgnoredUrls.js";
 import { createNamedWindowSpecification, type NamedWindowSpecification } from "./domain/specifications/NamedWindowSpecification.js";
-import { createTabSpecification } from "./domain/specifications/TabSpecification.js";
+import { createDefaultNamedWindowSpecification } from "./domain/specifications/DefaultNamedWindowSpecification.js";
+import { createTabSpecification, type TabSpecification } from "./domain/specifications/TabSpecification.js";
 import type { WindowName } from "./domain/WindowName.js";
 
 declare const browser: typeof import("webextension-polyfill");
@@ -53,84 +54,160 @@ function renderIgnoredUrls() {
     }
 }
 
+function buildSpecElement(spec: NamedWindowSpecification, index: number, totalSpecs: number): HTMLDivElement {
+    const matchUrls = spec.isDefault ? '' : spec.tabSpecifications.map(s => s.urlPattern).join('\n');
+
+    const specItem = document.createElement('div');
+    specItem.className = `spec-item${spec.isDefault ? ' is-default' : ''}`;
+    specItem.dataset.index = String(index);
+
+    // --- Bar ---
+    const bar = document.createElement('div');
+    bar.className = 'spec-bar';
+
+    const stickySpan = document.createElement('span');
+    stickySpan.className = 'spec-sticky';
+    stickySpan.textContent = spec.sticky ? '📌' : '';
+    bar.appendChild(stickySpan);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'spec-name';
+    nameSpan.textContent = spec.name;
+    bar.appendChild(nameSpan);
+
+    if (spec.isDefault) {
+        const badge = document.createElement('span');
+        badge.className = 'default-badge';
+        badge.textContent = 'Default';
+        bar.appendChild(badge);
+    }
+
+    const controls = document.createElement('div');
+    controls.className = 'spec-controls';
+    if (index > 0) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-icon btn-move-up';
+        btn.title = 'Move up in priority';
+        btn.textContent = '↑';
+        controls.appendChild(btn);
+    }
+    if (index < totalSpecs - 1) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-icon btn-move-down';
+        btn.title = 'Move down in priority';
+        btn.textContent = '↓';
+        controls.appendChild(btn);
+    }
+    if (!spec.isDefault) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-icon btn-delete';
+        btn.title = 'Delete';
+        btn.textContent = '🗑';
+        controls.appendChild(btn);
+    }
+    bar.appendChild(controls);
+    specItem.appendChild(bar);
+
+    // --- Content ---
+    const content = document.createElement('div');
+    content.className = 'spec-content';
+
+    // Name input
+    const nameGroup = document.createElement('div');
+    nameGroup.className = 'form-group';
+    const nameLabel = document.createElement('label');
+    nameLabel.textContent = 'Name';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'spec-name-input';
+    nameInput.value = spec.name;
+    nameInput.placeholder = 'e.g., Work, Research';
+    nameGroup.append(nameLabel, nameInput);
+    content.appendChild(nameGroup);
+
+    // URL patterns or default notice
+    if (!spec.isDefault) {
+        const urlGroup = document.createElement('div');
+        urlGroup.className = 'form-group';
+        const urlLabel = document.createElement('label');
+        urlLabel.textContent = 'Match URLs (one per line)';
+        const urlArea = document.createElement('textarea');
+        urlArea.className = 'spec-urls-input';
+        urlArea.placeholder = 'mail.google.com\noutlook.com';
+        urlArea.value = matchUrls;
+        const urlHint = document.createElement('small');
+        urlHint.textContent = 'Tabs whose URL contains any of these patterns will be assigned to this window.';
+        urlGroup.append(urlLabel, urlArea, urlHint);
+        content.appendChild(urlGroup);
+    } else {
+        const infoBox = document.createElement('div');
+        infoBox.className = 'info-box';
+        infoBox.textContent = "This is the default window. Tabs that don't match any other specification will go here.";
+        content.appendChild(infoBox);
+    }
+
+    // Theme colours
+    const themeGroup = document.createElement('div');
+    themeGroup.className = 'form-group';
+    const themeLabel = document.createElement('label');
+    themeLabel.textContent = 'Theme Colors';
+    const colorSection = document.createElement('div');
+    colorSection.className = 'color-section';
+    for (const { label, cls, value } of [
+        { label: 'Accent',   cls: 'spec-accent-color', value: spec.theme?.accentColor      ?? '#667eea' },
+        { label: 'Text',     cls: 'spec-text-color',   value: spec.theme?.textColor        ?? '#ffffff' },
+        { label: 'Frame',    cls: 'spec-frame-color',  value: spec.theme?.frameColor       ?? '#4a5568' },
+        { label: 'Tab text', cls: 'spec-tab-bg-text',  value: spec.theme?.tabBackgroundText ?? '#333333' },
+    ]) {
+        const picker = document.createElement('div');
+        picker.className = 'color-picker';
+        const pickerLabel = document.createElement('label');
+        pickerLabel.textContent = label;
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.className = cls;
+        colorInput.value = value;
+        picker.append(pickerLabel, colorInput);
+        colorSection.appendChild(picker);
+    }
+    themeGroup.append(themeLabel, colorSection);
+    content.appendChild(themeGroup);
+
+    // Sticky checkbox
+    const stickyRow = document.createElement('div');
+    stickyRow.className = 'spec-content-row';
+    const stickyGroup = document.createElement('div');
+    stickyGroup.className = 'form-group';
+    const stickyLabel = document.createElement('label');
+    const stickyCheckbox = document.createElement('input');
+    stickyCheckbox.type = 'checkbox';
+    stickyCheckbox.className = 'spec-sticky-input';
+    stickyCheckbox.checked = spec.sticky;
+    stickyLabel.append(stickyCheckbox, ' 📌 Sticky (prevent automatic tab reassignment)');
+    stickyGroup.appendChild(stickyLabel);
+    stickyRow.appendChild(stickyGroup);
+    content.appendChild(stickyRow);
+
+    specItem.appendChild(content);
+    return specItem;
+}
+
 function renderSpecs() {
     if (!specsList) return;
 
-    specsList.innerHTML = '';
+    specsList.replaceChildren();
 
     const specs = currentConfig.specifications;
     if (specs.length === 0) {
-        specsList.innerHTML = '<div class="empty-state">No specifications configured yet.</div>';
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.textContent = 'No specifications configured yet.';
+        specsList.appendChild(empty);
         return;
     }
 
     specs.forEach((spec, index) => {
-        const isDefault = index === specs.length - 1;
-        const matchUrls = spec.tabSpecifications?.map(s => s.urlPattern).join('\n') ?? '';
-
-        const specItem = document.createElement('div');
-        specItem.className = `spec-item ${isDefault ? 'is-default' : ''}`;
-        specItem.dataset.index = String(index);
-
-        specItem.innerHTML = `
-            <div class="spec-bar">
-                <span class="spec-sticky">${spec.sticky ? '📌' : ''}</span>
-                <span class="spec-name">${escapeHtml(spec.name)}</span>
-                ${isDefault ? '<span class="default-badge">Default</span>' : ''}
-                <div class="spec-controls">
-                    ${index > 0 ? `<button class="btn-icon btn-move-up" title="Move up in priority">↑</button>` : ''}
-                    ${index < specs.length - 1 ? `<button class="btn-icon btn-move-down" title="Move down in priority">↓</button>` : ''}
-                    ${!isDefault ? `<button class="btn-icon btn-delete" title="Delete">🗑</button>` : ''}
-                </div>
-            </div>
-            <div class="spec-content">
-                <div class="form-group">
-                    <label>Name</label>
-                    <input type="text" class="spec-name-input" value="${escapeHtml(spec.name)}" placeholder="e.g., Work, Research">
-                </div>
-                ${!isDefault ? `
-                <div class="form-group">
-                    <label>Match URLs (one per line)</label>
-                    <textarea class="spec-urls-input" placeholder="mail.google.com&#10;outlook.com">${escapeHtml(matchUrls)}</textarea>
-                    <small>Tabs whose URL contains any of these patterns will be assigned to this window.</small>
-                </div>
-                ` : `
-                <div class="info-box">
-                    This is the default window. Tabs that don't match any other specification will go here.
-                </div>
-                `}
-                <div class="form-group">
-                    <label>Theme Colors</label>
-                    <div class="color-section">
-                        <div class="color-picker">
-                            <label>Accent</label>
-                            <input type="color" class="spec-accent-color" value="${spec.theme?.accentColor ?? '#667eea'}">
-                        </div>
-                        <div class="color-picker">
-                            <label>Text</label>
-                            <input type="color" class="spec-text-color" value="${spec.theme?.textColor ?? '#ffffff'}">
-                        </div>
-                        <div class="color-picker">
-                            <label>Frame</label>
-                            <input type="color" class="spec-frame-color" value="${spec.theme?.frameColor ?? '#4a5568'}">
-                        </div>
-                        <div class="color-picker">
-                            <label>Tab text</label>
-                            <input type="color" class="spec-tab-bg-text" value="${spec.theme?.tabBackgroundText ?? '#333333'}">
-                        </div>
-                    </div>
-                </div>
-                <div class="spec-content-row">
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" class="spec-sticky-input" ${spec.sticky ? 'checked' : ''}>
-                            📌 Sticky (prevent automatic tab reassignment)
-                        </label>
-                    </div>
-                </div>
-            </div>
-        `;
-
+        const specItem = buildSpecElement(spec, index, specs.length);
         specsList.appendChild(specItem);
 
         specItem.querySelector('.spec-bar')!.addEventListener('click', () => specItem.classList.toggle('expanded'));
@@ -151,8 +228,6 @@ function saveSpecChanges(index: number) {
 
     const spec = currentConfig.specifications[index];
     if (!spec) return;
-
-    const isDefault = index === currentConfig.specifications.length - 1;
 
     const nameInput = specItem.querySelector('.spec-name-input') as HTMLInputElement;
     const stickyInput = specItem.querySelector('.spec-sticky-input') as HTMLInputElement;
@@ -181,24 +256,19 @@ function saveSpecChanges(index: number) {
 
     let updatedSpec: NamedWindowSpecification;
 
-    if (isDefault) {
-        updatedSpec = { ...spec, name, sticky, theme };
+    if (spec.isDefault) {
+        updatedSpec = createDefaultNamedWindowSpecification(name, theme);
     } else {
         const urlPatterns = (urlsInput?.value ?? '')
             .split('\n')
             .map(u => u.trim())
             .filter(u => u.length > 0);
 
-        const tabSpecs = urlPatterns.length > 0
-            ? urlPatterns.map(createTabSpecification)
-            : spec.tabSpecifications ?? [createTabSpecification('')];
+        const tabSpecs: readonly [TabSpecification, ...TabSpecification[]] = urlPatterns.length > 0
+            ? urlPatterns.map(createTabSpecification) as [TabSpecification, ...TabSpecification[]]
+            : spec.tabSpecifications;
 
-        updatedSpec = createNamedWindowSpecification(
-            name,
-            tabSpecs as unknown as readonly [any, ...any[]],
-            theme,
-            sticky
-        );
+        updatedSpec = createNamedWindowSpecification(name, tabSpecs, theme, sticky);
     }
 
     const specs = [...currentConfig.specifications];
@@ -339,8 +409,3 @@ function showStatus(message: string, type: 'success' | 'error') {
     setTimeout(() => { statusMessage.style.display = 'none'; }, 4000);
 }
 
-function escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}

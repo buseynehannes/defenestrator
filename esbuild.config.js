@@ -7,7 +7,7 @@ const commonOptions = {
   platform: 'browser',
   target: 'es2022',
   format: 'esm',
-  sourcemap: 'inline',
+  sourcemap: true,
   logLevel: 'info',
   loader: {
     '.js': 'js'

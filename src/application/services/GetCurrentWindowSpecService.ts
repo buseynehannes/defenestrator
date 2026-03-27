@@ -29,7 +29,7 @@ export class GetCurrentWindowSpecService implements GetCurrentWindowSpecUseCase 
                     name: spec.name,
                     sticky: spec.sticky,
                     isDefault: spec.isDefault,
-                    matchUrls: spec.tabSpecifications?.map(ts => ts.urlPattern) ?? [],
+                    matchUrls: spec.isDefault ? [] : spec.tabSpecifications.map(ts => ts.urlPattern),
                 };
             }
         }

@@ -3,10 +3,16 @@ module.exports = {
   ignoreFiles: [
     'coverage/**',
     'node_modules/**',
-    '*.md',
+    'docs/**',
+    '**/*.md',
     '*.iml',
+    'Makefile',
+    'esbuild.config.js',
+    'web-ext-config.cjs',
     'tsconfig.json',
+    'tsconfig.integration.json',
     'vitest.config.ts',
+    'vitest.integration.config.ts',
     'package.json',
     'package-lock.json',
     'src/**/*.ts',
@@ -22,4 +28,3 @@ module.exports = {
     output: 'text',
   },
 };
-
